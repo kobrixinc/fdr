@@ -1,5 +1,3 @@
-# FDR
-
 # What Is It?
 
 The Semantic Web (RDF) technology stack has traditionally been snubbed by mainstream application developers. There are many reasons for that, none of which are fundamental as the recent accelerated adoption shows. On the technical side, there are standards for data models and querying, there are authoring tools, there are database engines that are pretty solid. Moreover, so called graph thinking is in fact becoming mainstream fueled by a graph technology - Labeled Property Graphs - that can hardly brag about standardization, vendor diversity or solid traditions. So time is ripe for leveraging RDF as a graph-oriented database technology for building applications. [Note: application thus built can better be aligned with data-centric / model-driven architectures, for obvious reasons]
