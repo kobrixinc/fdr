@@ -35,19 +35,29 @@ All aim to simplify programming business logic and GUIs. We try to make common t
 
 This section describes the core concepts at the foundation of the FDR design. As a programming library, there are several layers in the architecture and depending on the task at hand one may need to understand this or that layer, or even a few simultaneously, more deeply. 
 
+## Data Specifications
+
+The atomic unit of data in RDF is the triple - a single statement about a subject. That’s not enough for writing applications. More complex data structures, things like objects for example, are needed. In addition, data gets copied from one place to another - for example from a remote triple store to a JavaScript object on the browser - and one needs to somehow synchronize the copies when they change. To be sure, there is no notion of “changing a single triple”. However, when triples aggregate into more complex graph structures, mutating those structures while still preserving some meaningful from a business standpoint invariant is quite common. Not only common, but that’s what much of application development is about. 
+
+We want to be able to somehow capture that meaningful invariant, the thing that doesn’t change about a piece of data, in order to refer to the data in a stable (doesn’t break over time) and universal (works the same everywhere) way. A `data specification` accomplishes this. A data specification is a description of a piece of the graph that can be used to retrieve that piece from a remote location or in general identify it. 
+
+Two simple forms of a data specification is the data itself - anything is its own specification, trivially - and an identifier of a resource which can be taken to describe all the triples that have that resource as the subject. 
+
+A general SPARQL query is also a data specification. So is the identifier of an object in a complex object model, so long as the identifier is interpreted correctly of course. 
+
+In FDR, data specification instances are created by factories and then the framework handles some basic operations like retrieving the data from a backend and synchronizing multiple versions of it. The synchronization follows a change management model detailed below (ref).
+
 ## Subject
 
 The term “resource” from the RDF acronym is a bit of an unfortunate choice. Historically the intended use was for describing online web resources. But really in the subject position of an RDF triple we have, well, a subject. And the wide applicability of the RDF model to all matters of data modeling, including conventional business applications, demonstrates that the term suggest too narrow of a scope. [Note: on the early days, there was a competing framework called Topic Maps (ref) where what was described was called a subject which also presupposed a lighter ontological commitment]
 
 ## Graph
 
-A graph is a simply a collection of subjects related via properties. 
+A graph is a collection of triples, in FDR as everywhere in the Semantic Web world. But FDR adds a layer of some practical abstractions on top. One such abstraction is the coupling with supported data specification factories. A graph handles not only triples, but more complex structures and deals with change propagation. Another is the composition of multiple graphs into a single view. This is a bit like federation, but without the programmer having to worry which piece of data lives where. A third is name resolution - namespaces and prefixes is how we do this in RDF, but having to worry about it when interacting with an RDF API is rather annoying, so FDR helps with that. 
 
 ## Triplestore
 
-Anything that store triples. While typically a single endpoint abiding by the SPARQL Protocol (see [https://www.w3.org/TR/sparql11-protocol/](https://www.w3.org/TR/sparql11-protocol/)), this can be anything else capable of storing and retrieving RDF triples. There are enough ad hoc, special purpose endpoints that ultimately are about serving and storing RDF, without being fully SPARQL compliant, and we want to allow connectivity with all of them. 
-
-## Data Specification
+Anything that stores triples. While typically a single endpoint abiding by the SPARQL Protocol (see [https://www.w3.org/TR/sparql11-protocol/](https://www.w3.org/TR/sparql11-protocol/)), this can be anything else capable of storing and retrieving RDF triples. There are enough ad hoc, special purpose endpoints that ultimately are about serving and storing RDF, without being fully SPARQL compliant, and we want to allow connectivity with all of them. 
 
 # API
 
