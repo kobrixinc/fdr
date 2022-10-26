@@ -152,13 +152,6 @@ export class LocalGraph implements Graph {
     return result    
   }
   
-  /**
-   * Ping the remote graph to see if it is up
-   */
-  async ping() {
-    const result = await this.client.query({type: 'AnySubjectQuery'})
-    console.log(`Ping returned ${result}`)
-  }
 
   close(desc: DataSpec<any>): void {
     //TBD: should this remove the data spec from?
