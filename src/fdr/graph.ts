@@ -168,6 +168,4 @@ export class LocalGraph implements Graph {
     console.log('not implemented')
   }
 
-
-
 }
