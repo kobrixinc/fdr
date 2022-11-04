@@ -1,9 +1,9 @@
 
-import { QuadChange } from "./changemgmt"
-import { DataSpec, DataSpecFactory, Subject} from "./dataspecAPI"
-import { SubjectImpl, type_guards } from "./dataspec"
-import { NameResolver, resolvers } from "./naming"
-import { TripleStoreClient } from "./triplestore-client"
+import { QuadChange } from "./changemgmt.js"
+import { DataSpec, DataSpecFactory, Subject} from "./dataspecAPI.js"
+import { SubjectImpl, type_guards } from "./dataspec.js"
+import { NameResolver, resolvers } from "./naming.js"
+import { TripleStoreClient } from "./triplestore-client.js"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.

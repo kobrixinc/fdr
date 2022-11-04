@@ -1,5 +1,5 @@
 import { Dataset, NamedNode} from "@rdfjs/types"
-import { QuadChange } from "./changemgmt"
+import { QuadChange } from "./changemgmt.js"
 
 export interface TripleStoreClient {
   /**

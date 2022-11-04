@@ -1,11 +1,11 @@
 /* eslint-disable no-prototype-builtins */
 import { Dataset, Quad } from "@rdfjs/types"
-import { asArray } from "../utils"
-import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt"
-import { LiteralValue } from "./fdr"
-import { Graph, LocalGraph } from "./graph"
-import { DatasetIngester } from "./triplestore-client"
-import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization } from "./dataspecAPI"
+import { asArray } from "../utils.js"
+import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
+import { LiteralValue } from "./fdr.js"
+import { Graph, LocalGraph } from "./graph.js"
+import { DatasetIngester } from "./triplestore-client.js"
+import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
 
 

@@ -1,7 +1,7 @@
 import { Quad } from "@rdfjs/types"
-import { Subject } from "./dataspecAPI"
-import { SubjectImpl } from "./dataspec"
-import { make, LiteralValue } from "./fdr"
+import { Subject } from "./dataspecAPI.js"
+import { SubjectImpl } from "./dataspec.js"
+import { make, LiteralValue } from "./fdr.js"
 
 export class QuadChange {
   constructor(readonly quad: Quad) { }

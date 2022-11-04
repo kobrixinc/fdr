@@ -9,7 +9,7 @@ export class make {
 
 export type LiteralValue = number | string | boolean
 
-export type  { NameResolver, DefaultNameResolver } from "./naming"
-export type { Subject } from "./dataspecAPI"
-export * from "./triplestore-client"
-export * from "./graph"
+export type  { NameResolver, DefaultNameResolver } from "./naming.js"
+export type { Subject } from "./dataspecAPI.js"
+export * from "./triplestore-client.js"
+export * from "./graph.js"
