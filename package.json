@@ -1,9 +1,9 @@
 {
   "name": "@kobrix/fdr",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "",
   "exports": {
-    "." : "./dist/index.js"
+    ".": "./dist/index.js"
   },
   "types": "dist/index.d.ts",
   "type": "module",
