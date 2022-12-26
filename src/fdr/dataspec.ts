@@ -254,10 +254,10 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     if (this.properties.hasOwnProperty(prop)) {
       let oldval = this.properties[prop]      
       const oldValAsArray = oldval instanceof Array ? oldval : [oldval]
-      const removed = intersect(oldValAsArray, object)
+      // const removed = intersect(oldValAsArray, object)
       const updatedAnnotation = []
 
-      const change = new PropertyRemoved(prop, removed, updatedAnnotation)
+      const change = new PropertyRemoved(prop, object, updatedAnnotation)
       this.apply([change])
       this.enqueueToChangeBuffer(change)
     }
@@ -372,8 +372,8 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     if (this.properties.hasOwnProperty(prop)) {
       let oldval = this.properties[prop]
       const oldValAsArray = oldval instanceof Array ? oldval : [oldval]      
-      const removed = intersect(oldValAsArray, val)
-      const change = new PropertyRemoved(prop, removed)
+      // const removed = intersect(oldValAsArray, val)
+      const change = new PropertyRemoved(prop, val)
       this.enqueueToChangeBuffer(change)
       this.apply([change])
     }
@@ -585,7 +585,7 @@ class  SubjectLightCopy extends SubjectBase {
     this.properties = {}
     this.annotation = {}
     for (const property of original.propertyNames()) {
-      this.properties[property] = original.get(property)
+      this.properties[property] = original.getAll(property)
       this.annotation[property] = original.getPropertyValueAnnotation(property)
     }
   }
@@ -653,10 +653,23 @@ function parseDataset(graph : Graph, subjectId : string, dataset: Dataset<Quad, 
   // and maybe get implicated, help or whatever...
   // dataset.filter
   quads.filter( (quad:Quad) => quad.subject.value == subjectId).forEach( quad => {
-    if (quad.object.termType == "NamedNode")
-      props[quad.predicate.value] = graph.factory.subject(quad.object.value)
-    else if (quad.object.termType == "Literal")
-      props[quad.predicate.value] = quad.object.value
+    let newVal
+    if (quad.object.termType == "NamedNode") {
+      newVal = graph.factory.subject(quad.object.value)
+    }
+    else if (quad.object.termType == "Literal") {
+      newVal = quad.object.value
+    }
+    if (props[quad.predicate.value] instanceof Array) {
+      props[quad.predicate.value].push(newVal)
+    }
+    else if (props[quad.predicate.value]) {
+      props[quad.predicate.value] = [props[quad.predicate.value], newVal]
+    }
+    else {
+      props[quad.predicate.value] = newVal
+    }
+    
   })
   // should we merge here instead? what are different kinds of ingestion of triples about this subject?    
   return props

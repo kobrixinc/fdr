@@ -76,19 +76,19 @@ export class PropertyReplaced implements PropertyChange {
           make.literal(oneOldValue)
       )))
     }   
-    
-    for(const oneNewValue of this.newvalue as (Subject|LiteralValue)[])
+   
+    for (const i in this.newvalue)
     {
+      const oneNewValue = this.newvalue[i] as (Subject|LiteralValue)
       const change = new QuadAdded(make.quad(
         make.named(subject.id), 
         make.named(this.name),
         oneNewValue instanceof SubjectImpl ? 
           make.named(oneNewValue.id) : 
           make.literal(oneNewValue)
-      ), this.annotation)
+      ), this.annotation && this.annotation[i])
       result.push(change)
     }
-
             
     return result
   }              
