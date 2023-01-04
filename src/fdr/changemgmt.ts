@@ -4,7 +4,13 @@ import { SubjectImpl } from "./dataspec.js"
 import { make, LiteralValue } from "./fdr.js"
 
 export class QuadChange {
-  constructor(readonly quad: Quad) { }
+  constructor(readonly quad?: Quad) { }
+}
+
+export class NoChange extends QuadChange {
+  constructor() { 
+    super()
+  }
 }
 
 export class QuadAdded extends QuadChange {

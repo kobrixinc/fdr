@@ -109,6 +109,15 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
   ingest(result : any)
 }
 
+export type PropertyValue = LiteralValue | Subject
+
+export class PropertyValueIdentifier {
+  constructor(readonly subject: SubjectId, 
+              readonly property: string,
+              readonly value: PropertyValue) { }
+}
+
+export type SubjectId = string | PropertyValueIdentifier
 
 /**
  * A subject is roughly the same thing as a "resource" in
@@ -124,7 +133,7 @@ export interface Subject extends DataSpec<Subject> {
    * string will suffice. We have to have a string version of
    * it either way. 
    */
-  readonly id:string
+  readonly id:SubjectId
 
   /**
    * The names of all set properties in this subject
@@ -199,6 +208,16 @@ export interface Subject extends DataSpec<Subject> {
   removePropertyChangedCallback(callback: (key: string) => void )
 
   /**
+   * Return a `Subject` instance which represents a particular property
+   * value set on this subject. This allows the manipulation of meta
+   * data on specific property statements (or triples) at any (meta) level.
+   * 
+   * @param propertyName The property name.
+   * @param value The property value - a literal or another subject.
+   */
+  propertyAsSubject(propertyName: string, value: LiteralValue|Subject): Subject
+
+  /**
    * Get the annotation for the given property/value combination
    * @param key 
    * @param value -- if specifed the annotation for the given value will be returned 
@@ -215,7 +234,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param property the name of the property of the annotated triple 
    * @param value the value of that property to annotate
    */
-  setPropertyValueAnnotation(property: string, value: LiteralValue|Subject, annotation: any)
+   setPropertyValueAnnotation(property: string, value: LiteralValue|Subject, annotation: any)
 
 }
 
@@ -229,6 +248,6 @@ export interface Subject extends DataSpec<Subject> {
  * Should that be the contract for the interface?
  */
  export interface DataSpecFactory {
-  subject(id: string): Subject
+  subject(id: SubjectId): Subject
 }
 

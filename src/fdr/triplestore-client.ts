@@ -1,4 +1,4 @@
-import { Dataset, NamedNode} from "@rdfjs/types"
+import { Dataset, NamedNode, Quad} from "@rdfjs/types"
 import { QuadChange } from "./changemgmt.js"
 
 export interface TripleStoreClient {
@@ -8,7 +8,8 @@ export interface TripleStoreClient {
    * @returns a dataset which contains all the quads which have this
    * named node as their subject
    */
-  fetch(named: NamedNode): Promise<[Dataset, object]>
+  fetch(...subjects: Array<NamedNode | Quad>): Promise<Dataset>
+  // fetch(named: NamedNode): Promise<[Dataset, object]>
 
   /**
    * Query the triplestore. 

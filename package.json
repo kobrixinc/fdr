@@ -8,7 +8,8 @@
   "scripts": {
     "deploy": "npm run build && npx np",
     "build": "npx tsc",
-    "test": "echo \"Error: no test specified\" "
+    "test2": "mocha --timeout 1000000 --loader=ts-node/esm --extension ts --reporter spec ./tests/**",
+    "test": "ts-mocha --paths -p ./tsconfig.json tests/**/*-tests.ts"
   },
   "repository": {
     "type": "git",
@@ -22,11 +23,18 @@
   "homepage": "https://github.com/kobrixinc/fdr#readme",
   "dependencies": {
     "@rdfjs/data-model": "^2.0.0",
+    "@rdfjs/dataset": "^2.0.0",
     "@rdfjs/types": "^1.1.0",
     "subscription": "^3.0.0"
   },
   "devDependencies": {
+    "@types/expect": "^24.3.0",
+    "@types/mocha": "^10.0.1",
+    "mocha": "^10.1.0",
     "np": "^7.6.2",
+    "ts-mocha": "^10.0.0",
+    "ts-node": "^10.9.1",
+    "tsconfig-paths": "^4.1.1",
     "typescript": "^4.8.4"
   }
 }

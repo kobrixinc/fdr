@@ -5,7 +5,7 @@ import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadC
 import { LiteralValue } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
-import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization } from "./dataspecAPI.js"
+import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, PropertyValueIdentifier, PropertyValue } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
 
 
@@ -35,7 +35,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   readonly changes: Array<PropertyChange> = []
   protected workingCopies : SubjectLightCopy[] = [] 
 
-  constructor(readonly id:string) {}  
+  constructor(readonly id: SubjectId) {}  
 
   protected abstract notifyGraphAboutPropertyChange(prop : string[]) : void
   protected abstract resolveName(name : string) : string
@@ -46,6 +46,13 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   abstract get ready(): boolean
   public onReferentsChanged : Subscription = new Subscription()
   protected onPropertyChanged : Subscription = new Subscription()
+
+  propertyAsSubject(propertyName: string, value: PropertyValue): Subject {
+    // TODO
+    return new SubjectImpl(
+      new PropertyValueIdentifier(this.id, propertyName, value), 
+      (this as Object as SubjectImpl).graph)
+  }
 
   getPropertyValueAnnotation(key: string) {
     return this.annotation![key]
@@ -438,15 +445,11 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
 
 }
 
-/*
-This module contains implementations of the FDR interfaces which 
-*/
 
 /**
  * The main subject implementation of the Subject interface which works with the LocalGraph
  * 
- * This class is an implementation detail and is only exported so that the graph
- * module can use it
+ * This class is only exported so that it's accessible to the `graph.ts` module.
  */
 export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> {
     
@@ -464,7 +467,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   
   public graph: LocalGraph  
 
-  constructor(readonly id:string, graph: LocalGraph) {
+  constructor(readonly id:SubjectId, graph: LocalGraph) {
     super(id)
     this.graph = graph
   }
@@ -503,7 +506,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     const dataset = annotatedDataset[0]
     const annotation = annotatedDataset[1]
     //isn't parseDataset and the logic after it duplicate?
-    const props = parseDataset(this.graph, this.id, dataset)
+    const props = parseDataset(this.graph, this.id as string, dataset)
     const quads: Array<Quad> = Array.from(dataset['_quads'].values())
     // This dataset.filter method is documented as part of the DatasetCore interface
     // but it seems like it's not implemented yet. NEed to reach out to that rdfjs community
@@ -580,7 +583,9 @@ class  SubjectLightCopy extends SubjectBase {
    * @param graph 
    * @param resolver 
    */
-  constructor(original : Subject, private graph : () => Graph, private resolver : (string) => string) {
+  constructor(original : Subject, 
+              private graph : () => Graph, 
+              private resolver : (string) => string) {
     super(original.id)
     this.properties = {}
     this.annotation = {}
