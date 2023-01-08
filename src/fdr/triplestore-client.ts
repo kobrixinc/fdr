@@ -24,7 +24,14 @@ export interface TripleStoreClient {
    * @returns a promise which resolves with a value containing the result set of that query 
    */
   query(query: object): Promise<any>
-  modify(changes: Array<QuadChange>): Promise<object>
+
+  /**
+   * 
+   * @param changes The changes will result in a SPARQL query where they are applied
+   * in the passed in order.
+   * @return { ok: boolean, error?:string }
+   */
+  modify(changes: Array<QuadChange>): Promise<{ok:boolean, error?: string }>
   
 }
 

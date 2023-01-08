@@ -1,8 +1,11 @@
 import { Dataset, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
 import datasetFactory from "@rdfjs/dataset"
-import { make } from "./fdr"
-import { TripleStoreClient } from "./triplestore-client"
-import { NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt"
+import { make } from "./fdr.js"
+import { TripleStoreClient } from "./triplestore-client.js"
+import { NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt.js"
+
+let fetch = global['fetch'] ?? (await import('node-fetch')).default
+console.log('fetch',  fetch)
 
 export class SparqlClient {
   constructor(readonly readEndpoint: string, 
@@ -12,27 +15,46 @@ export class SparqlClient {
   }
 
   async select(query: string): Promise<Array<object>> {
+    let formBody: Array<string> = []
+    let details = {query}
+    for (var property in details) {
+      var encodedKey = encodeURIComponent(property)
+      var encodedValue = encodeURIComponent(details[property])
+      formBody.push(encodedKey + "=" + encodedValue)
+    }
     let result = await fetch(this.readEndpoint, {
       method: 'post',
-      body: query
+      headers: {
+        'Content-Type':'application/x-www-form-urlencoded',
+        'Accept':'application/json'
+      },
+      body: formBody.join("&")
     })
-    let lines = (await result.text()).split('\n')
-    let names = lines[0].split(",")
-    let rows = []
-    for (let i = 1; i < lines.length; i++) {
-      let row = {}
-      let cols = lines[i].split(",")
-      for (let n = 0; n < names.length; n++)
-        row[names[n]] = cols[n]
-    }
-    return rows
+    if (result.status != 200)
+      throw new Error(await result.text())
+    let matches: Array<object> = []
+    // of course, for big results this might be a issue, streaming is better
+    // but improvement won't be much because ultimately this function
+    // has to return an array
+    let queryResult = await result.text()
+    JSON.parse(queryResult)['results']['bindings'].forEach(binding => {
+      matches.push(binding)
+    })
+    return matches
   }
 
   async update(query: string): Promise<object> {
+    console.log(query)
     let result = await fetch(this.updateEndpoint, {
       method: 'post',
+      headers: {
+        'Content-Type': 'application/sparql-update'
+      },
       body: query
     })
+    console.log(result, await result.text())
+    if (result.status >= 400) // we don't know to handle redirects and such
+      throw new Error(await result.text())
     return result
   }
 }
@@ -66,6 +88,13 @@ class SPARQLProtocolClient implements TripleStoreClient {
     }
     else
       return value.value
+  }
+
+  jsonToTerm(x: object): Term {
+    if (x['type'] == 'uri')
+      return make.named(x['value'])
+    else // if (x['type'] == 'literal')
+      return make.literal(x['value'])
   }
 
   constructor(readonly endpointUrl: string, 
@@ -129,7 +158,7 @@ class SPARQLProtocolClient implements TripleStoreClient {
       {
         select ?subject ?property ?value ?metaproperty ?metavalue  where {
           values (?subject ?property ?value) { 
-            (<https://swapi.co/resource/film/5>  <https://swapi.co/vocabulary/boxOffice> "90163.2432371946"^^<http://www.w3.org/2001/XMLSchema#string> ) } .
+            (${n3(quad.subject)}  ${n3(quad.predicate)} ${n3(quad.object)} ) } .
         << ?subject ?property ?value >> ?metaproperty ?metavalue
         }  
       }
@@ -158,20 +187,20 @@ class SPARQLProtocolClient implements TripleStoreClient {
         `  
     })
     
-    let data = await this.client.select(` 
+    let queryString = ` 
       SELECT * WHERE {
         ${subqueries.join("\n\tUNION\n")}
       }`
-    )
+    let data = await this.client.select(queryString)
     const quads: Array<Quad> = []
     data.forEach( row => {      
-      let subject = row['subject']
-      let prop = row['property']
-      let value = row['value']
+      let subject = this.jsonToTerm(row['subject']) as NamedNode
+      let prop = this.jsonToTerm(row['property']) as NamedNode
+      let value = this.jsonToTerm(row['value'])
       if (row.hasOwnProperty("metaproperty")) {
         quads.push(make.quad(make.quad(subject, prop, value), 
-                   row["metaproperty"],
-                   row["metavalue"]))
+                   this.jsonToTerm(row["metaproperty"]) as NamedNode,
+                   this.jsonToTerm(row["metavalue"])))
       }
       else if (self.propertyFilter.call(self, prop) &&
           self.valueFilter.call(self, value)) {
@@ -208,7 +237,7 @@ class SPARQLProtocolClient implements TripleStoreClient {
     throw new Error('Method not implemented.')
   }
 
-  async modify(changes: QuadChange[]): Promise<object> {
+  async modify(changes: QuadChange[]): Promise<{ok:boolean, error?:string}> {
     let n3 = this.n3_format.bind(this)
     // let self = this
     let update = changes.map(ch => {
@@ -240,24 +269,9 @@ class SPARQLProtocolClient implements TripleStoreClient {
     }
     catch (err) {
       console.error('While running update query', err)
-      return {ok:false, error: err}
+      return {ok:false, error: String(err)}
     }
   }
 
 }
-
-// (async function() {
-//   // const endpointUrl = 'https://query.wikidata.org/sparql'
-//   const endpointUrl = 'http://localhost:7200/repositories/starwars'
-//   let client = new SPARQLProtocolClient(endpointUrl)
-
-//   //let data = await client.fetch(make.named("http://www.wikidata.org/entity/Q243"))
-//   let data = await client.fetch(make.named("https://swapi.co/resource/film/5"))
-
-//   console.log("size", data[0].size)
-//   for (let x of data[0]) 
-//     console.log(x.subject, x.predicate, x.object)
-//   console.log("Hello world, again!")
-// })()
-
 export default SPARQLProtocolClient

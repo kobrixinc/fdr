@@ -2,14 +2,18 @@
   "name": "@kobrix/fdr",
   "version": "0.0.13",
   "description": "",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main2": "dist/index.js",
+  "types2": "dist/index.d.ts",
+  "main": "index.ts",
   "type": "module",
   "scripts": {
     "deploy": "npm run build && npx np",
-    "build": "npx tsc",
+    "build": "npx tsc -p tsconfig-build.json",
+    "start": "ts-node-esm ./src/testme.ts",
+    "test": "npx tsc -p tsconfig.json && mocha dist/tests/**/*-tests.js",
     "test2": "mocha --timeout 1000000 --loader=ts-node/esm --extension ts --reporter spec ./tests/**",
-    "test": "ts-mocha --paths -p ./tsconfig.json tests/**/*-tests.ts"
+    "test3": "mocha --timeout 1000000 --loader=ts-node/esm --extension ts --reporter spec ./tests/**",
+    "test4": "ts-mocha --paths tests/**/*-tests.ts"
   },
   "repository": {
     "type": "git",
@@ -25,12 +29,14 @@
     "@rdfjs/data-model": "^2.0.0",
     "@rdfjs/dataset": "^2.0.0",
     "@rdfjs/types": "^1.1.0",
+    "node-fetch": "^3.3.0",
     "subscription": "^3.0.0"
   },
   "devDependencies": {
     "@types/expect": "^24.3.0",
     "@types/mocha": "^10.0.1",
     "mocha": "^10.1.0",
+    "chai": "^4.3.7",
     "np": "^7.6.2",
     "ts-mocha": "^10.0.0",
     "ts-node": "^10.9.1",
