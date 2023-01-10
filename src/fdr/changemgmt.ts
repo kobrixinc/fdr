@@ -3,11 +3,15 @@ import { Subject } from "./dataspecAPI.js"
 import { SubjectImpl } from "./dataspec.js"
 import { make, LiteralValue } from "./fdr.js"
 
-export class QuadChange {
-  constructor(readonly quad?: Quad) { }
+export class KBChange {
+  constructor() { }
 }
 
-export class NoChange extends QuadChange {
+export class QuadChange {
+  constructor(readonly quad: Quad) { }
+}
+
+export class NoChange extends KBChange {
   constructor() { 
     super()
   }

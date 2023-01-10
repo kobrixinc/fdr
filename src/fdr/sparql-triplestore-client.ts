@@ -2,7 +2,7 @@ import { Dataset, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
 import datasetFactory from "@rdfjs/dataset"
 import { make } from "./fdr.js"
 import { TripleStoreClient } from "./triplestore-client.js"
-import { NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt.js"
+import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt.js"
 
 let fetch = global['fetch'] ?? (await import('node-fetch')).default
 console.log('fetch',  fetch)
@@ -237,7 +237,7 @@ class SPARQLProtocolClient implements TripleStoreClient {
     throw new Error('Method not implemented.')
   }
 
-  async modify(changes: QuadChange[]): Promise<{ok:boolean, error?:string}> {
+  async modify(changes: KBChange[]): Promise<{ok:boolean, error?:string}> {
     let n3 = this.n3_format.bind(this)
     // let self = this
     let update = changes.map(ch => {

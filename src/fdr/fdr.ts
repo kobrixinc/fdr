@@ -7,6 +7,7 @@ export class make {
   static quad(x: NamedNode, y: NamedNode, z: Term, g?:Term) { 
     return modelFactory.quad(x, y, z, g) 
   }
+  // TODO: the term in object position here, the 'z' argument can also be a quad
   static metaQuad(x: Quad, y: NamedNode, z: Term, g?: Term) {
     return modelFactory.quad(x, y, z, g) 
   }

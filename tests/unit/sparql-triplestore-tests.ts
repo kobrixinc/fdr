@@ -2,7 +2,7 @@ import { assert } from "chai"
 import { DatasetCore, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
 import { make } from "../../src/fdr/fdr.js"
 import SPARQLProtocolClient, { SparqlClient } from "../../src/fdr/sparql-triplestore-client.js"
-import { NoChange, QuadAdded, QuadChange, QuadRemoved } from "../../src/fdr/changemgmt.js"
+import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "../../src/fdr/changemgmt.js"
 
 describe("SPARQL Protocol Implementation Tests", function() {
 
@@ -78,7 +78,7 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
 
     // Step 1: get all values for the box office amount for the film and
     // annotate them with some random confidence value.
-    let changes: Array<QuadChange> = 
+    let changes: Array<KBChange> = 
       valuesOf(boxofficeProp, (await endpoint.fetch(film))).map(val => {
         confidences[val.value] = Math.random()
         let triple = make.quad(film, boxofficeProp, val)
