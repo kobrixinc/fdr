@@ -1,5 +1,5 @@
-import { PropertyChange } from "./changemgmt"
-import { LiteralValue } from "./fdr"
+import { PropertyChange } from "./changemgmt.js"
+import { LiteralValue } from "./fdr.js"
 
 /*
 This module contains all the types the user needs in order to interact with
