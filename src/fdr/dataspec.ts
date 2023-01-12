@@ -502,9 +502,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
    * 
    * @param dataset 
    */
-  ingest(annotatedDataset : [Dataset<Quad, Quad>, object]): void {
-    const dataset = annotatedDataset[0]
-    const annotation = annotatedDataset[1]
+  ingest(dataset : Dataset<Quad, Quad>): void {
     //isn't parseDataset and the logic after it duplicate?
     const props = parseDataset(this.graph, this.id as string, dataset)
     const quads: Array<Quad> = Array.from(dataset['_quads'].values())
@@ -522,13 +520,16 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     this.properties = props    
     //TODO ingest annotation data from the dataset 
     this.annotation = copyShape(props)
-    for (const entry of Object.entries(annotation)) {
-      this.annotation[entry[0]] = entry[1]
-    }
+    // for (const entry of Object.entries(annotation)) {
+    //   this.annotation[entry[0]] = entry[1]
+    // }
   }
 
   workingCopy(reactivityDecorator?: <T extends Subject>(original: T) => T): Subject {
-    let result = new SubjectLightCopy(this, () => this.graph, (name) => this.graph.nameResolver.resolve(name))
+    let result = new SubjectLightCopy(
+      this, 
+      () => this.graph, 
+      (name) => this.graph.nameResolver.resolve(name))
     if (reactivityDecorator)
       result = reactivityDecorator(result)
     else if (this.graph.reactivityDecorator)
