@@ -5,6 +5,32 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug Test",
+      "request": "launch",
+      "runtimeArgs": [
+        "run",
+        "test"
+      ],
+      "runtimeExecutable": "npm",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "node"
+    },
+    {
+      "name": "Launch Dummy Test",
+      "request": "launch",
+      "runtimeArgs": [
+        "run",
+        "dummy-test"
+      ],
+      "runtimeExecutable": "npm",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "node"
+    },
+    {
       "name": "Launch Debug Test",
       "request": "launch",
       "runtimeArgs": [
