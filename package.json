@@ -14,6 +14,7 @@
     "test2": "mocha --timeout 1000000 --loader=ts-node/esm --extension ts --reporter spec ./tests/**",
     "test3": "mocha --timeout 1000000 --loader=ts-node/esm --extension ts --reporter spec ./tests/**",
     "test4": "ts-mocha --paths tests/**/*-tests.ts"
+    "dummy-test": "ts-mocha -p tsconfig.json ./tests/unit/dummy-unit-test.ts"
   },
   "repository": {
     "type": "git",
@@ -33,10 +34,11 @@
     "subscription": "^3.0.0"
   },
   "devDependencies": {
+    "@types/chai": "^4.3.4",
     "@types/expect": "^24.3.0",
     "@types/mocha": "^10.0.1",
-    "mocha": "^10.1.0",
     "chai": "^4.3.7",
+    "mocha": "^10.1.0",
     "np": "^7.6.2",
     "ts-mocha": "^10.0.0",
     "ts-node": "^10.9.1",

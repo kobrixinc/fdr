@@ -1,23 +1,46 @@
 {
-  "include": ["src/**/*", "tests/**/*"],
+  "include": ["tests/**/*", "src/**/*"],
+
+  // "exclude": ["src/testme.ts"],
   "compilerOptions": {
-    "target": "es2017",                                  /* Set the JavaScript language version for emitted JavaScript and include compatible library declarations. */
-    "module": "es2022",                                /* Specify what module code is generated. */
-    // "rootDir": ".",
-    "rootDir": "./src",               /* Specify the root folder within your source files. */
-    // "rootDirs": ["./src", "./tests"],               /* Specify the root folder within your source files. */
+    /*
+    Target ES6 compilation
+    */
+    "target": "ES2017",                                  
+    /* 
+      Compile the TS modules as ESM (which will be the effect of module: es6 as well)
+
+      module: NodeNext enforces (via the implied moduleResolution:NodeNext setting) 
+      Node ESM rules when compiling typescript, instead of using the CommonJS rules 
+      by setting moduleResolution: Node; That way the TS modules will be compiled to
+      ESMs which Node would be able to resolve
+      One difference is: CJS allow for non relative names without extension, ESM does not
+      i.e. module names  
+    */
+    "module": "NodeNext",                                
+    "rootDirs": ["./src", "./tests"],
     "outDir": "./dist",                                   /* Specify an output folder for all emitted files. */
     "esModuleInterop": true,                             /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */
     "forceConsistentCasingInFileNames": true,            /* Ensure that casing is correct in imports. */
     "strict": true,                                      /* Enable all strict type-checking options. */
     "skipLibCheck": true,                                 /* Skip type checking all .d.ts files. */
-    "moduleResolution": "node",
     "noImplicitAny": false,
     "experimentalDecorators": true,
-    "baseUrl": ".",
     "declaration": true,
-    "paths": {
-        "@/*": ["src/*"]
-    }
+    "sourceMap": true,
+    /*
+    All non relative module names are resolved relateive to the base url
+    This does not have any effect on the runtime; Make sure the original
+    module names are resolveable at runtime
+    */
+    "baseUrl": ".",
+    /*
+    TS will search for the <key> modules in the <value> path when resolving imported modules;
+    The compilation will not rewrite the resolved paths so we need to make sure that 
+    the original names can be resolved at runtime.
+    */
+    // "paths": {
+    //     "@/*": ["src/*"]
+    // }
   }
 }
