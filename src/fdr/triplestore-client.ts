@@ -1,4 +1,4 @@
-import { Dataset, NamedNode} from "@rdfjs/types"
+import { Dataset, NamedNode, Quad} from "@rdfjs/types"
 import { QuadChange } from "./changemgmt.js"
 
 export interface TripleStoreClient {
@@ -8,7 +8,8 @@ export interface TripleStoreClient {
    * @returns a dataset which contains all the quads which have this
    * named node as their subject
    */
-  fetch(named: NamedNode): Promise<[Dataset, object]>
+  fetch(...subjects: Array<NamedNode | Quad>): Promise<Dataset>
+  // fetch(named: NamedNode): Promise<[Dataset, object]>
 
   /**
    * Query the triplestore. 
@@ -23,7 +24,14 @@ export interface TripleStoreClient {
    * @returns a promise which resolves with a value containing the result set of that query 
    */
   query(query: object): Promise<any>
-  modify(changes: Array<QuadChange>): Promise<object>
+
+  /**
+   * 
+   * @param changes The changes will result in a SPARQL query where they are applied
+   * in the passed in order.
+   * @return { ok: boolean, error?:string }
+   */
+  modify(changes: Array<QuadChange>): Promise<{ok:boolean, error?: string }>
   
 }
 
