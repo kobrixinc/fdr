@@ -1,6 +1,6 @@
 import { Quad } from "@rdfjs/types"
-import { Subject } from "./dataspecAPI.js"
-import { SubjectImpl } from "./dataspec.js"
+import { Subject, SubjectId } from "./dataspecAPI.js"
+import { PropertyValueIdentifier, SubjectImpl } from "./dataspec.js"
 import { make, LiteralValue } from "./fdr.js"
 
 export class KBChange {
@@ -37,14 +37,11 @@ export interface PropertyChange {
 export class PropertyAdded implements PropertyChange {
   constructor(readonly name: string, readonly value: Subject[] | LiteralValue[], readonly annotation?: any[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
-    return (this.value as (Subject|LiteralValue)[]).map(added => 
-      new QuadAdded(make.quad(
-        make.named(subject.id), 
-        make.named(this.name),
-        added instanceof SubjectImpl ? 
-          make.named(added.id) : 
-          make.literal(added)
-      ), this.annotation))
+    return (this.value as (Subject|LiteralValue)[]).map(added => {
+      const pvi = new PropertyValueIdentifier(subject.id, this.name, added) 
+      const newQuad = pvi.toQuad() 
+      return new QuadAdded(newQuad, this.annotation)
+    }) 
   }
 }
 
@@ -53,7 +50,7 @@ export class PropertyRemoved implements PropertyChange {
   toQuadChanges(subject: Subject): Array<QuadChange> {
     return (this.value as (Subject|LiteralValue)[]).map(added => 
       new QuadRemoved(make.quad(
-        make.named(subject.id), 
+        make.named(subject.id.toString()), 
         make.named(this.name),
         added instanceof SubjectImpl ? 
           make.named(added.id) : 
@@ -79,7 +76,7 @@ export class PropertyReplaced implements PropertyChange {
     
     for (const oneOldValue of this.oldvalue) {
       result.push(new QuadRemoved(make.quad(
-        make.named(subject.id), 
+        make.named(subject.id.toString()), 
         make.named(this.name),
         oneOldValue instanceof SubjectImpl ? 
           make.named(oneOldValue.id) : 
@@ -91,7 +88,7 @@ export class PropertyReplaced implements PropertyChange {
     {
       const oneNewValue = this.newvalue[i] as (Subject|LiteralValue)
       const change = new QuadAdded(make.quad(
-        make.named(subject.id), 
+        make.named(subject.id.toString()), 
         make.named(this.name),
         oneNewValue instanceof SubjectImpl ? 
           make.named(oneNewValue.id) : 

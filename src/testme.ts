@@ -1,4 +1,4 @@
-import { DatasetCore, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
+import { DatasetCore, Literal, NamedNode, Quad, Quad_Object } from "@rdfjs/types"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "./fdr/changemgmt.js"
 import { make } from "./fdr/fdr.js"
 import SPARQLProtocolClient from "./fdr/sparql-triplestore-client.js"
@@ -23,8 +23,8 @@ function coreSetToArray(coreset: DatasetCore): Array<Quad> {
 * @param set The set of quads.
 * @returns An array of all the values for that property.
 */
-function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
-let A: Array<Term> = []
+function valuesOf(prop: NamedNode, set: DatasetCore) {
+let A: Quad_Object[] = []
 for (const el of set.match(null, prop, null, null)) {
   // console.log('el.object', el.object, typeof el.object)
   A.push(el.object)

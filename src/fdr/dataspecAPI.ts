@@ -1,3 +1,4 @@
+import { Quad } from "@rdfjs/types"
 import { PropertyChange } from "./changemgmt.js"
 import { LiteralValue } from "./fdr.js"
 
@@ -99,8 +100,12 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
   /**
    * The wire format of this data spec's definition which is to be sent to the
    * remote graph in order to query the dataspec's backing data
-   */
-  query : any
+   * 
+   * This is transport specific and we aim to support different backends so we should
+   * leave it to the transport implementation to serialize the DataSpecs
+  */
+
+  //query : any
 
   /**
    * Ingest the result set of running the query into this dataspec's state
@@ -111,13 +116,31 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
 
 export type PropertyValue = LiteralValue | Subject
 
-export class PropertyValueIdentifier {
-  constructor(readonly subject: SubjectId, 
-              readonly property: string,
-              readonly value: PropertyValue) { }
+
+/**
+ * The identifier of a subject
+ * 
+ * All implementations of this interface need to be immutable
+ * 
+ */
+export interface SubjectId {
+  toString()
+  equals(other : SubjectId)
+} 
+
+export class IRISubjectId implements SubjectId {
+  
+  constructor(readonly iri: string){}
+
+  toString() {
+    return this.iri
+  }
+  equals(other: SubjectId) {
+    return (other as IRISubjectId).iri == this.iri
+  }
+
 }
 
-export type SubjectId = string | PropertyValueIdentifier
 
 /**
  * A subject is roughly the same thing as a "resource" in
@@ -125,6 +148,13 @@ export type SubjectId = string | PropertyValueIdentifier
  * the ontological bent that RDF has taken. 
  * 
  * This is the basic user-facing type.
+ * 
+ * All the named entities returned by methods in this type 
+ * are fully resolved.
+ * 
+ * All the named entities passed as arguments to methods in this
+ * type can be shortened and are resolved against ...
+ * TODO how is the resolution service set
  */
 export interface Subject extends DataSpec<Subject> {
   /**
@@ -217,25 +247,6 @@ export interface Subject extends DataSpec<Subject> {
    */
   propertyAsSubject(propertyName: string, value: LiteralValue|Subject): Subject
 
-  /**
-   * Get the annotation for the given property/value combination
-   * @param key 
-   * @param value -- if specifed the annotation for the given value will be returned 
-   */
-  getPropertyValueAnnotation(key: string, value?: any) : any
-
-  /**
-   * Set annotation for a given property/value combination. An annotation can be
-   * an arbitrary piece of metadata for an RDF triple. The rationale behind this
-   * concept is to store the original natural language phrase which generated
-   * a specific triple and the parsed structure of that phrase.
-   * The properties are saved and propagated across working copies and sources of
-   * truth under the same set of rules as the properties themselves
-   * @param property the name of the property of the annotated triple 
-   * @param value the value of that property to annotate
-   */
-   setPropertyValueAnnotation(property: string, value: LiteralValue|Subject, annotation: any)
-
 }
 
 
@@ -248,6 +259,10 @@ export interface Subject extends DataSpec<Subject> {
  * Should that be the contract for the interface?
  */
  export interface DataSpecFactory {
+  /**
+   * Create a subject from a subject identifier;
+   * @param id 
+   */
   subject(id: SubjectId): Subject
 }
 

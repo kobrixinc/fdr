@@ -90,7 +90,7 @@ class SPARQLProtocolClient implements TripleStoreClient {
       return value.value
   }
 
-  jsonToTerm(x: object): Term {
+  jsonToTerm(x: object): Literal|NamedNode{
     if (x['type'] == 'uri')
       return make.named(x['value'])
     else // if (x['type'] == 'literal')
@@ -198,7 +198,7 @@ class SPARQLProtocolClient implements TripleStoreClient {
       let prop = this.jsonToTerm(row['property']) as NamedNode
       let value = this.jsonToTerm(row['value'])
       if (row.hasOwnProperty("metaproperty")) {
-        quads.push(make.quad(make.quad(subject, prop, value), 
+        quads.push(make.metaQuad(make.quad(subject, prop, value), 
                    this.jsonToTerm(row["metaproperty"]) as NamedNode,
                    this.jsonToTerm(row["metavalue"])))
       }

@@ -1,11 +1,11 @@
 /* eslint-disable no-prototype-builtins */
-import { Dataset, Quad } from "@rdfjs/types"
+import { BlankNode, Dataset, Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Variable } from "@rdfjs/types"
 import { asArray } from "../utils.js"
 import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { LiteralValue } from "./fdr.js"
+import { LiteralValue, make } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
-import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, PropertyValueIdentifier, PropertyValue } from "./dataspecAPI.js"
+import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, PropertyValue, IRISubjectId } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
 
 
@@ -19,24 +19,13 @@ import { Subscription } from "subscription"
 abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
  
   protected properties: object | null = null
-  /*
-  The annotation object stores the annotations for a the values of this Subject's 
-  properties. When a propety has multiple values, the annotation will contain under
-  that property an array with the same number of items as the number of values set
-  for that property, even though some or all of the values may not have annotations.
-  Invariant for this class: the annotation object must always have the same shape
-  as the properties object with the only difference that the annotation will not
-  contain single values -- whenever a property in the object array has a single
-  value, the annotation will contain under that property an array with a single 
-  value.
-  */
-  protected annotation: object | null = null
 
   readonly changes: Array<PropertyChange> = []
   protected workingCopies : SubjectLightCopy[] = [] 
 
   constructor(readonly id: SubjectId) {}  
 
+  abstract getGraph() : Graph
   protected abstract notifyGraphAboutPropertyChange(prop : string[]) : void
   protected abstract resolveName(name : string) : string
   abstract commit(): Promise<void>
@@ -48,48 +37,12 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   protected onPropertyChanged : Subscription = new Subscription()
 
   propertyAsSubject(propertyName: string, value: PropertyValue): Subject {
-    // TODO
-    return new SubjectImpl(
-      new PropertyValueIdentifier(this.id, propertyName, value), 
-      (this as Object as SubjectImpl).graph)
+    const id = new PropertyValueIdentifier(this.id, propertyName, value)
+    const subject = (this as unknown as SubjectBase).getGraph().factory.subject(id)
+    debugger
+    return subject
   }
 
-  getPropertyValueAnnotation(key: string) {
-    return this.annotation![key]
-  }
-
-  setPropertyValueAnnotation(key: string, value: LiteralValue|Subject, annotation) : any {
-    /*
-    The annotation object has the exact same shape as the property object
-    */
-    if (!this.ready)
-      throw new Error('Subject is not ready.')   
-    
-    let change : PropertyChange
-    const values = this.properties![key]
-    if (values instanceof Array) {
-      const index = values.indexOf(value)
-      if (index < -1) {
-        throw new Error(`Cannot annotate value ${value} because it does not exist for key ${key}`)
-      }
-      else {
-        const annotationsForThisValue = this.annotation![key] as any[]
-        let newAnnotations = annotationsForThisValue.slice(0, annotationsForThisValue.length)
-        newAnnotations[index] = annotation
-        change = new PropertyReplaced(key, values, values, newAnnotations)
-      }
-    }
-    else {
-      if (values == value) {
-        this.annotation![key] = [annotation]
-        change = new PropertyReplaced(key, values, values, [annotation])
-      }
-      else
-        throw new Error (`Cannot annotate value ${value} because it does not exist for key ${key}`)
-    }
-    this.apply([change])
-    this.enqueueToChangeBuffer(change)
-  }
 
   /**
    * Enqueue a change to the buffer which will be sent to upstream sources 
@@ -226,16 +179,10 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     let change
     if (this.properties.hasOwnProperty(prop)) {
       let oldval = this.properties[prop]
-      let oldAnnotation = this.annotation![prop] as any[]
       if (type_guards.isSubjectValue(oldval)) {
         const oldValAsArray = oldval instanceof Array ? oldval : [oldval]        
-        
         const u = union(oldValAsArray, objects)
-        if (u.length > oldAnnotation.length) {
-          //expand the annotation array to the length of the new value array
-          oldAnnotation.splice(oldAnnotation.length, 0, ...new Array(u.length - oldAnnotation.length))
-        }
-        change = new PropertyReplaced(prop, oldValAsArray, u, oldAnnotation)
+        change = new PropertyReplaced(prop, oldValAsArray, u)
         
       }
       else {
@@ -262,9 +209,8 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       let oldval = this.properties[prop]      
       const oldValAsArray = oldval instanceof Array ? oldval : [oldval]
       // const removed = intersect(oldValAsArray, object)
-      const updatedAnnotation = []
 
-      const change = new PropertyRemoved(prop, object, updatedAnnotation)
+      const change = new PropertyRemoved(prop, object)
       this.apply([change])
       this.enqueueToChangeBuffer(change)
     }
@@ -342,7 +288,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     let change
     if (this.properties.hasOwnProperty(prop)) {
       let oldval = this.properties[prop]
-      let oldAnnotation = this.annotation![prop] as any[]
       if (type_guards.isLiteralValue(oldval)) {
         const oldValAsArray = oldval instanceof Array ? oldval : [oldval]
         /*
@@ -350,11 +295,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
         TODO check if we actually do that! 
         */
         const inserted = union(oldValAsArray, val)
-        if (inserted.length > oldAnnotation.length) {
-          //expand the annotation array to the length of the new value array
-          oldAnnotation.splice(oldAnnotation.length, 0, ...new Array(inserted.length - oldAnnotation.length))
-        }
-        change = new PropertyReplaced(prop, oldValAsArray, inserted, oldAnnotation)
+        change = new PropertyReplaced(prop, oldValAsArray, inserted)
         
       }
       else {
@@ -396,29 +337,16 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     
     for (const change of changes) {
       if (change instanceof PropertyAdded) {
-        if (change.annotation && change.value.length != change.annotation.length) {
-          throw new Error(`Annotation and value arrays have different shapes.`)
-        }
         this.properties![change.name] = change.value
-        this.annotation![change.name] = change.annotation || (change.value instanceof Array 
-          ? new Array(change.value.length) 
-          : new Array[1])
       }
       else if (change instanceof PropertyReplaced) {
-        if (change.annotation && change.newvalue.length != change.annotation.length) {
-           throw new Error(`Annotation and value arrays have different shapes.`)
-        }
         this.properties![change.name] = change.newvalue
-        this.annotation![change.name] = change.annotation || (change.newvalue instanceof Array 
-          ? new Array(change.newvalue.length) 
-          : new Array[1])
       }
       else if (change instanceof PropertyRemoved) {
         /*
         TODO PropertyRemoved deletes specific values, not the entire property!
         */
         delete this.properties![change.name]
-        delete this.annotation![change.name]
       }
     }    
   }
@@ -452,6 +380,9 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
  * This class is only exported so that it's accessible to the `graph.ts` module.
  */
 export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> {
+  getGraph(): Graph {
+    return this.graph
+  }
     
   protected resolveName(name: string): string {  
     return this.graph.nameResolver.resolve(name)
@@ -473,9 +404,24 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   }
   
   get query() { 
-    return {
-      type: 'Subject',
-      id: this.id
+    if (this.id instanceof PropertyValueIdentifier) {
+      debugger
+      return {
+        type: 'Subject',
+        propertyValueIdentifier : {
+          ontologyId: this.getGraph().id,
+          subject: {id: this.id.subject},
+          predicate: this.id.property,
+          object: (this.id.value as Subject).id ? {id: (this.id.value as Subject).id} : this.id.value,
+        }
+      }
+    }
+    else {
+      return {
+        type: 'Subject',
+        id : this.id.toString()
+      }
+
     }
   }
 
@@ -504,7 +450,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
    */
   ingest(dataset : Dataset<Quad, Quad>): void {
     //isn't parseDataset and the logic after it duplicate?
-    const props = parseDataset(this.graph, this.id as string, dataset)
+    const props = parseDataset(this.graph, this.id, dataset)
     const quads: Array<Quad> = Array.from(dataset['_quads'].values())
     // This dataset.filter method is documented as part of the DatasetCore interface
     // but it seems like it's not implemented yet. NEed to reach out to that rdfjs community
@@ -519,7 +465,6 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     // should we merge here instead? what are different kinds of ingestion of triples about this subject?    
     this.properties = props    
     //TODO ingest annotation data from the dataset 
-    this.annotation = copyShape(props)
     // for (const entry of Object.entries(annotation)) {
     //   this.annotation[entry[0]] = entry[1]
     // }
@@ -581,18 +526,16 @@ class  SubjectLightCopy extends SubjectBase {
   /**
    * 
    * @param original 
-   * @param graph 
+   * @param getGraph 
    * @param resolver 
    */
   constructor(original : Subject, 
-              private graph : () => Graph, 
+              public getGraph : () => Graph, 
               private resolver : (string) => string) {
     super(original.id)
     this.properties = {}
-    this.annotation = {}
     for (const property of original.propertyNames()) {
       this.properties[property] = original.getAll(property)
-      this.annotation[property] = original.getPropertyValueAnnotation(property)
     }
   }
 
@@ -610,13 +553,13 @@ class  SubjectLightCopy extends SubjectBase {
 
   
   private async originial() : Promise<SubjectImpl> {
-    const graph = this.graph()
+    const graph = this.getGraph()
     const original = await graph.use(graph.factory.subject(this.id) as SubjectImpl)
     return original
   }
 
   async commit(): Promise<void> {
-    const graph = this.graph()
+    const graph = this.getGraph()
     const original = await this.originial()
     /*
     this is a copy, so its original is a Subje
@@ -644,6 +587,53 @@ class  SubjectLightCopy extends SubjectBase {
   
 }
 
+function compareQuads(q1:Quad, q2:Quad) {
+  function compareSubjects(s1: Quad_Subject, s2: Quad_Subject) {
+    if (type_guards.isNamedNode(s1)) {
+      if (type_guards.isNamedNode(s2)) {
+        return s1.value == s2.value
+      }
+      else return false
+    }
+    else if (type_guards.isQuad(s1)) {
+      if (type_guards.isQuad(s2)) {
+        return compareQuads(s1, s2)
+      }
+      else return false
+    }
+    else {
+      throw new Error(`${q1.subject} is neither named node, nor quad`)
+    }
+  } 
+  function compareObjects(s1: Quad_Object, s2: Quad_Object) {
+    if (type_guards.isNamedNode(s1)) {
+      if (type_guards.isNamedNode(s2)) {
+        return s1.value == s2.value
+      }
+      else return false
+    }
+    else if (type_guards.isQuad(s1)) {
+      if (type_guards.isQuad(s2)) {
+        return compareQuads(s1, s2)
+      }
+      else return false
+    }
+    else if (type_guards.isLiteral(s1)) {
+      if (type_guards.isLiteral(s2)) {
+        return s1.value == s2.value
+      }
+      else return false
+    }
+    else {
+      throw new Error(`${q1.subject} is neither named node, nor quad`)
+    }
+  } 
+  return compareSubjects(q1.subject, q2.subject) 
+    && compareObjects(q1.object, q2.object)
+    && q1.predicate.value == q2.predicate.value
+
+}
+
 /**
  * parse a dataset into individual's properties
  * @param graph TODO only the factory is needed and it probably shouldn't be passed as parameter
@@ -651,17 +641,29 @@ class  SubjectLightCopy extends SubjectBase {
  * @param dataset The dataset to parse
  * @returns 
  */
-function parseDataset(graph : Graph, subjectId : string, dataset: Dataset<Quad, Quad>): object {
+function parseDataset(graph : Graph, subjectId : SubjectId, dataset: Dataset<Quad, Quad>): object {
   const props = {} 
   const quads: Array<Quad> = Array.from(dataset['_quads'].values())
   // This dataset.filter method is documented as part of the DatasetCore interface
   // but it seems like it's not implemented yet. Need to reach out to that rdfjs community
   // and maybe get implicated, help or whatever...
   // dataset.filter
-  quads.filter( (quad:Quad) => quad.subject.value == subjectId).forEach( quad => {
+
+  
+  quads.filter( (quad:Quad) => {
+      if (subjectId instanceof PropertyValueIdentifier) {
+        const asQuad = subjectId.toQuad()
+        return compareQuads(asQuad, quad.subject as Quad)
+      }
+      else {
+        // compare as normal IRI subjects
+        return (subjectId as IRISubjectId).iri == quad.subject.value
+      }
+    })
+    .forEach( quad => {
     let newVal
     if (quad.object.termType == "NamedNode") {
-      newVal = graph.factory.subject(quad.object.value)
+      newVal = graph.factory.subject(new IRISubjectId(quad.object.value))
     }
     else if (quad.object.termType == "Literal") {
       newVal = quad.object.value
@@ -708,13 +710,27 @@ export const type_guards = {
 
   isRemoteDataSpec(dataSpec : DataSpec<any>) : dataSpec is RemoteDataSpec<any> {
     const asRemote = dataSpec as RemoteDataSpec<any>
-    return asRemote.ingest !== undefined && asRemote.query !== undefined && asRemote.ready !== undefined
+    return asRemote.ingest !== undefined && asRemote.ready !== undefined
   },
+
   isSubjectChangeSynchronization(subject): subject is SubjectChangeSynchronization {
     return (subject as SubjectChangeSynchronization).syncFromUpstream != undefined
     &&
     (subject as SubjectChangeSynchronization).syncFromDownstream != undefined
+  },
+
+  isNamedNode(entity: NamedNode | BlankNode | Quad | Variable | Literal): entity is NamedNode {
+    return (entity as NamedNode).termType == 'NamedNode'   
+  },
+
+  isQuad(entity: NamedNode | BlankNode | Quad | Variable | Literal): entity is Quad {
+    return (entity as Quad).termType == 'Quad'   
+  },
+  
+  isLiteral(entity: NamedNode | BlankNode | Quad | Variable | Literal): entity is Literal{
+    return (entity as Literal).termType == 'Literal'   
   }
+
 }
 
 /**
@@ -826,6 +842,90 @@ function copyShape(from: object) : object {
     result[key] = from[key] instanceof Array ? new Array(from[key].length) : new Array(1)
   }
   return result
+}
+
+/**
+ * A Property value identifier is an identifier of a specific value of a
+ * specific property on a subject.
+ * This is the Object based equivalent of an RDF triple
+ */
+export class PropertyValueIdentifier implements SubjectId {
+  constructor(readonly subject: SubjectId, 
+              readonly property: string,
+              readonly value: PropertyValue) { }
+  
+  equals(other: SubjectId) {
+    const pvi =  other as PropertyValueIdentifier
+    if (pvi.subject) {
+      if (this.subject.equals(pvi.subject) && this.property == this.property) {
+        if (type_guards.isSubjectValue(this.value)) {
+          if (type_guards.isSubjectValue(pvi.value)) {
+            return this.value.id.equals(pvi.value.id)    
+          }
+          else {
+            return false
+          } 
+        } 
+        else {
+          return this.value == pvi.value
+        }
+      }
+      else {
+        return false
+      }  
+    }
+    else {
+      return false
+    }
+  }
+
+  
+  /**
+   * Transform the property
+   * @returns 
+   */
+  toQuad() : Quad {
+    debugger
+    /**
+     * recursively convert a property of a specific suject to a Quad 
+     * @param subject 
+     * @param property 
+     * @param value 
+     * @returns 
+     * TODO the value could be a meta subject which should be serialized as such as well
+     */
+    const makeQuad = (subject : SubjectId, property: string, value: Subject|LiteralValue) => {
+      if (subject instanceof PropertyValueIdentifier) {
+        const pvi = subject as PropertyValueIdentifier
+        return make.metaQuad(
+          makeQuad(pvi.subject, pvi.property, pvi.value), 
+          make.named(property),
+          value instanceof SubjectImpl ? 
+            make.named(value.id) : 
+            make.literal(value))
+      }
+      else {
+        return make.quad(
+          make.named(subject), 
+          make.named(property),
+          value instanceof SubjectImpl ? 
+            make.named(value.id) : 
+            make.literal(value))
+      }
+    }
+    const newQuad = makeQuad(this.subject, this.property, this.value)
+    return newQuad    
+  }
+
+  toString() : string {
+    return JSON.stringify(
+      {
+        subject : this.subject.toString(), //recursively serialize the subject ID -- this could be another PropertyValueIdentifier
+        property: this.property,
+        value: (this.value as Subject).id || this.value //TODO this could be another property value id, so needs to be recursively 
+      }
+    )
+  }
 }
 
 

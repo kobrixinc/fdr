@@ -1,7 +1,7 @@
 
 import { QuadChange } from "./changemgmt.js"
-import { DataSpec, DataSpecFactory, Subject} from "./dataspecAPI.js"
-import { SubjectImpl, type_guards } from "./dataspec.js"
+import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
+import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
 import { NameResolver, resolvers } from "./naming.js"
 import { TripleStoreClient } from "./triplestore-client.js"
 
@@ -57,14 +57,23 @@ export class LocalGraph implements Graph {
     
     constructor(readonly graph: LocalGraph) { }
 
-    subject(id: string): SubjectImpl {
-      id = this.graph.nameResolver.resolve(id)
-      let s = this.graph.cache.subjects[id]
-      if (!s) {
-        s = new SubjectImpl(id, this.graph)
-        this.graph.cache.subjects[id] = s
+    subject(id: SubjectId): SubjectImpl {
+      const resolver = this.graph.nameResolver
+      
+      function resolve(id : SubjectId) : SubjectId {
+        if (id  instanceof PropertyValueIdentifier) {
+          return new PropertyValueIdentifier(
+            resolve(id.subject),
+            resolver.resolve(id.property),
+            id.value) 
+        } 
+        else if (id instanceof IRISubjectId) {
+          return new IRISubjectId(resolver.resolve(id.iri))
+        }
+        throw new Error(`Subject id ${id} is unsupported`)
       }
-      return s
+
+      return new SubjectImpl(resolve(id), this.graph)
     }
 
     // subject(id: string): SubjectImpl {
@@ -142,9 +151,8 @@ export class LocalGraph implements Graph {
     if (!type_guards.isRemoteDataSpec(desc))
       throw new Error(`${desc} is expected to be a RemoteDataSpec`)
     if (!desc.ready) {
-      const data = await this.client.query(desc.query) 
-      if (data != null)
-      {
+      const data = await this.client.query(desc) 
+      if (data != null) {
         desc.ingest(data)
       }
       result = desc
