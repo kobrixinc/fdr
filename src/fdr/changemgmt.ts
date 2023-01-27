@@ -18,9 +18,8 @@ export class NoChange extends KBChange {
 }
 
 export class QuadAdded extends QuadChange {
-  constructor(readonly quad: Quad, readonly annotation? : object) { 
+  constructor(readonly quad: Quad) { 
     super(quad)
-    this.annotation = annotation
   }
 }
 
@@ -35,12 +34,12 @@ export interface PropertyChange {
 }
 
 export class PropertyAdded implements PropertyChange {
-  constructor(readonly name: string, readonly value: Subject[] | LiteralValue[], readonly annotation?: any[]) {}
+  constructor(readonly name: string, readonly value: Subject[] | LiteralValue[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
-    return (this.value as (Subject|LiteralValue)[]).map(added => {
+    return this.value.map((added : LiteralValue|Subject) => {
       const pvi = new PropertyValueIdentifier(subject.id, this.name, added) 
       const newQuad = pvi.toQuad() 
-      return new QuadAdded(newQuad, this.annotation)
+      return new QuadAdded(newQuad)
     }) 
   }
 }
@@ -48,14 +47,10 @@ export class PropertyAdded implements PropertyChange {
 export class PropertyRemoved implements PropertyChange {
   constructor(readonly name: string, readonly value: Subject[] | LiteralValue[], readonly annotation?: any[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
-    return (this.value as (Subject|LiteralValue)[]).map(added => 
-      new QuadRemoved(make.quad(
-        make.named(subject.id.toString()), 
-        make.named(this.name),
-        added instanceof SubjectImpl ? 
-          make.named(added.id) : 
-          make.literal(added)
-      )))
+    return (this.value as (Subject|LiteralValue)[]).map(added => {
+      const quad = new PropertyValueIdentifier(subject.id, this.name, added).toQuad()
+      return new QuadRemoved(quad)
+    })
   }
 }
 
@@ -70,30 +65,19 @@ export class PropertyReplaced implements PropertyChange {
               readonly oldvalue: Subject[] | LiteralValue[],
               readonly newvalue: Subject[]  | LiteralValue[],
               readonly annotation?: any[]) {}
-  debugger
   toQuadChanges(subject: Subject): Array<QuadChange> {
     const result = [] as QuadChange[]
     
     for (const oneOldValue of this.oldvalue) {
-      result.push(new QuadRemoved(make.quad(
-        make.named(subject.id.toString()), 
-        make.named(this.name),
-        oneOldValue instanceof SubjectImpl ? 
-          make.named(oneOldValue.id) : 
-          make.literal(oneOldValue)
-      )))
+      const quad = new PropertyValueIdentifier(subject.id, this.name, oneOldValue).toQuad()
+      result.push(new QuadRemoved(quad))
     }   
    
     for (const i in this.newvalue)
     {
       const oneNewValue = this.newvalue[i] as (Subject|LiteralValue)
-      const change = new QuadAdded(make.quad(
-        make.named(subject.id.toString()), 
-        make.named(this.name),
-        oneNewValue instanceof SubjectImpl ? 
-          make.named(oneNewValue.id) : 
-          make.literal(oneNewValue)
-      ), this.annotation && this.annotation[i])
+      const quad = new PropertyValueIdentifier(subject.id, this.name, oneNewValue).toQuad()
+      const change = new QuadAdded(quad)
       result.push(change)
     }
             

@@ -4,6 +4,7 @@ import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./da
 import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
 import { NameResolver, resolvers } from "./naming.js"
 import { TripleStoreClient } from "./triplestore-client.js"
+import { make } from "./fdr.js"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.
@@ -147,11 +148,27 @@ export class LocalGraph implements Graph {
 
   async use<T extends DataSpec<any>>(desc: T): Promise<T> {
     //local graph only uses RemoteDataSpecs
+    debugger
     let result = desc  
     if (!type_guards.isRemoteDataSpec(desc))
       throw new Error(`${desc} is expected to be a RemoteDataSpec`)
     if (!desc.ready) {
-      const data = await this.client.query(desc) 
+      let data
+      if (type_guards.isSubjectValue(desc)) {
+        const id = (desc as Subject).id 
+        if (id instanceof PropertyValueIdentifier) {
+          data = await this.client.fetch(id.toQuad()) 
+        }
+        else if (id instanceof IRISubjectId){
+          data = await this.client.fetch(make.named(id.iri)) 
+        }
+        else {
+          throw new Error(`${id} is neither IRI, nor property value identifier`)
+        }
+      }
+      else {
+        throw new Error(`Fetching non subject dataspecs is not supported`)
+      }
       if (data != null) {
         desc.ingest(data)
       }

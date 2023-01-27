@@ -895,23 +895,38 @@ export class PropertyValueIdentifier implements SubjectId {
      * TODO the value could be a meta subject which should be serialized as such as well
      */
     const makeQuad = (subject : SubjectId, property: string, value: Subject|LiteralValue) => {
+      
+      let subjectInQuad : Quad|NamedNode
+      let propertyInQuad : NamedNode 
+      let objectInQuad : Quad|NamedNode|Literal
+      propertyInQuad = make.named(property)
       if (subject instanceof PropertyValueIdentifier) {
         const pvi = subject as PropertyValueIdentifier
-        return make.metaQuad(
-          makeQuad(pvi.subject, pvi.property, pvi.value), 
-          make.named(property),
-          value instanceof SubjectImpl ? 
-            make.named(value.id) : 
-            make.literal(value))
+        subjectInQuad = makeQuad(pvi.subject, pvi.property, pvi.value)
+      }
+      else if (subject instanceof IRISubjectId) {
+        subjectInQuad = make.named(subject.iri) 
       }
       else {
-        return make.quad(
-          make.named(subject), 
-          make.named(property),
-          value instanceof SubjectImpl ? 
-            make.named(value.id) : 
-            make.literal(value))
+        throw new Error(`${subject} is an unsupported type of subject`)
       }
+     
+      if (type_guards.isLiteralValue(value)) {
+        objectInQuad = make.literal(value)
+      } 
+      else if (value.id instanceof IRISubjectId) {
+        objectInQuad = make.named(value.id.iri)
+      }
+      else if (value.id instanceof PropertyValueIdentifier) {
+        objectInQuad = makeQuad(value.id.subject, value.id.property, value.id.value)
+      }
+      else {
+        throw new Error (`${value} is not supported object value`)
+      }
+
+      return subjectInQuad.termType == 'NamedNode'
+        ? make.quad(subjectInQuad, propertyInQuad, objectInQuad) 
+        : make.metaQuad(subjectInQuad, propertyInQuad, objectInQuad) 
     }
     const newQuad = makeQuad(this.subject, this.property, this.value)
     return newQuad    
