@@ -50,7 +50,7 @@ export class LocalGraph implements Graph {
   readonly factory: DataSpecFactory
   client: TripleStoreClient
   private cache = { 
-    subjects: {}
+    subjects: new Map<SubjectId, SubjectImpl>()
   } 
   private _reactivityDecorator : <T extends Subject>(T) => T = (x) => x
 
@@ -73,8 +73,22 @@ export class LocalGraph implements Graph {
         }
         throw new Error(`Subject id ${id} is unsupported`)
       }
-
-      return new SubjectImpl(resolve(id), this.graph)
+      const resolved = resolve(id)
+      /*
+      TODO 
+      we need a better (O(1)) retrieval of existing subjects
+      from the map; the key is not a primitive value, so subjects.get()
+      does not work 
+      */
+      for (const entry of this.graph.cache.subjects.entries()) {
+        if (entry[0].equals(resolved)) {
+          return entry[1] 
+        }
+        this.graph.cache.subjects.get(resolved)
+      }
+      const res = new SubjectImpl(resolve(id), this.graph)
+      this.graph.cache.subjects.set(resolved, res)
+      return res 
     }
 
     // subject(id: string): SubjectImpl {
@@ -118,7 +132,7 @@ export class LocalGraph implements Graph {
   
   clear() {
     this.cache = { 
-      subjects: {}
+      subjects: new Map<SubjectId, SubjectImpl>() 
     }
   }
 
@@ -128,7 +142,7 @@ export class LocalGraph implements Graph {
    * This callback should modify any internal Graph state so that its state is consistent
    * with the changes made to the Subject
    * @param subject 
-   * @param key 
+   * @param key /
    */
   subjectPropertyChangeCallback(
     subject: Subject, 
