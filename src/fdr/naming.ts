@@ -8,6 +8,7 @@
  */
 export interface NameResolver {
   resolve(name: string): string
+  inverse() : NameResolver
 }
 
 class AliasResolver implements NameResolver {
@@ -17,10 +18,19 @@ class AliasResolver implements NameResolver {
   constructor(aliases: object) {
     this.dict = new Map<string, string>(Object.entries(aliases))
   }
+  inverse(): NameResolver {
+    const inverseMap = new Map<string, string>
+    for (const entry of this.dict){
+      inverseMap.set(entry[1], entry[0])
+    }
+    return new AliasResolver(inverseMap)
+  }
 
   withAliases(moreAliases: object): AliasResolver {
     Object.keys(moreAliases)
-      .forEach(key => this.dict.set(key, moreAliases[key]))
+      .forEach(key => {
+        this.dict.set(key, moreAliases[key])
+      })
     return this
   }
 
@@ -30,6 +40,7 @@ class AliasResolver implements NameResolver {
   }
 
   unset(alias: string): AliasResolver {
+    const value = (this.dict.get(alias))
     this.dict.delete(alias)
     return this
   }
@@ -51,6 +62,13 @@ class PrefixResolver implements NameResolver {
 
   constructor(prefixes: object) {
     this.prefixes = new Map<string, string>(Object.entries(prefixes))
+  }
+  inverse(): NameResolver {
+    const _inv = new Map<string, string>()
+    for (const k of this.prefixes) {
+      _inv.set(k[1], k[0])
+    }
+    return new PrefixResolver(_inv)
   }
 
   withPrefixes(morePrefixes: object): PrefixResolver {
@@ -98,6 +116,10 @@ class ConNameResolver implements NameResolver {
     this.first = first
     this.second = second
   }
+  inverse(): NameResolver {
+    return new ConNameResolver(this.second.inverse(), this.first.inverse())
+  }
+
   resolve(name: string): string {
     return this.second.resolve(this.first.resolve(name))
   }
