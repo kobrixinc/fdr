@@ -56,6 +56,28 @@ class AliasResolver implements NameResolver {
   }
 }
 
+class PrefixShortener implements NameResolver {
+  private prefixes: Map<string, string>
+
+  constructor(prefixes: object) {
+    this.prefixes = new Map<string, string>(Object.entries(prefixes))
+  }
+  resolve(name: string): string {
+    for (const [full, short] of this.prefixes) {
+      if (name.startsWith(full)) {
+        return short + ":" + name.substring(full.length)
+      }
+    }
+    return name
+  }
+  inverse(): NameResolver {
+    const _inv = new Map<string, string>()
+    for (const k of this.prefixes) {
+      _inv.set(k[1], k[0])
+    }
+    return new PrefixResolver(_inv)
+  }
+}
 class PrefixResolver implements NameResolver {
 
   private prefixes: Map<string, string>
@@ -64,11 +86,11 @@ class PrefixResolver implements NameResolver {
     this.prefixes = new Map<string, string>(Object.entries(prefixes))
   }
   inverse(): NameResolver {
-    const _inv = new Map<string, string>()
+    const _inv = {} 
     for (const k of this.prefixes) {
-      _inv.set(k[1], k[0])
+      _inv[k[1]] = k[0]
     }
-    return new PrefixResolver(_inv)
+    return new PrefixShortener(_inv)
   }
 
   withPrefixes(morePrefixes: object): PrefixResolver {
@@ -116,6 +138,7 @@ class ConNameResolver implements NameResolver {
     this.first = first
     this.second = second
   }
+  
   inverse(): NameResolver {
     return new ConNameResolver(this.second.inverse(), this.first.inverse())
   }
