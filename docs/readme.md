@@ -61,7 +61,13 @@ Anything that stores triples. While typically a single endpoint abiding by the S
 
 # API
 
-The FDR API is derived from the concepts outlined above.
+The FDR API is derived from the concepts outlined above. 
+
+You can install the module via:
+
+```
+npm install @kobrix/fdr
+```
 
 ## Initializing a `LocalGraph`
 
@@ -72,6 +78,8 @@ We refer to the remote graph as a _backing store_ because the main use case targ
 To create a local graph, you need to provide `TripleStoreClient` instance, for example a SPARQL endpoint:
 
 ```
+import { LocalGraph } from '@kobrix/fdr'
+import { SPARQLProtocolClient } from '@kobrix/fdr/sparql-triplestore-client'
 const endpointUrl = 'http://localhost:7200/repositories/starwars'
 let sparqlClient = new SPARQLProtocolClient(endpointUrl, endpointUrl + "/statements")
 let graph = new LocalGraph(sparqlClient)  // TODO - is 'id' needed here?
