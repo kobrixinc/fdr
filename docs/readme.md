@@ -62,3 +62,21 @@ Anything that stores triples. While typically a single endpoint abiding by the S
 # API
 
 The FDR API is derived from the concepts outlined above.
+
+## Initializing a `LocalGraph`
+
+A `LocalGraph` instance is proxy to a single remote graph - its backing store. It caches data locally, fetching it on demand and managing changes both coming _from_ its backing store or _to_ it. 
+
+We refer to the remote graph as a _backing store_ because the main use case targeted is when this is a SPARQL endpoint or some other semantic storage, such as native OWL storage, exposing a query interface. The backing store is in effect the _upstream_ source for the data in the local graph while any _working copy_ is a _downstream_ target. Changes propagation flows implicitly (automatically) in the upstream -> downstream direction and explicitly in the opposite, downstream -> upstream direction.
+
+To create a local graph, you need to provide `TripleStoreClient` instance, for example a SPARQL endpoint:
+
+```
+const endpointUrl = 'http://localhost:7200/repositories/starwars'
+let sparqlClient = new SPARQLProtocolClient(endpointUrl, endpointUrl + "/statements")
+let graph = new LocalGraph(sparqlClient)  // TODO - is 'id' needed here?
+```
+
+
+
+
