@@ -49,7 +49,7 @@ In FDR, data specification instances are created by factories and then the frame
 
 ## Subject
 
-The term “resource” from the RDF acronym is a bit of an unfortunate choice. Historically the intended use was for describing online web resources. But really in the subject position of an RDF triple we have, well, a subject. And the wide applicability of the RDF model to all matters of data modeling, including conventional business applications, demonstrates that the term suggest too narrow of a scope. [Note: on the early days, there was a competing framework called Topic Maps (ref) where what was described was called a subject which also presupposed a lighter ontological commitment]
+The term _resource_ from the RDF acronym is a bit of an unfortunate choice. Historically the intended use was for describing online web resources. But really in the subject position of an RDF triple we have, well, a subject. And the wide applicability of the RDF model to all matters of data modeling, including conventional business applications, demonstrates that the term _resource_ suggest too narrow of a scope. [Note: on the early days, there was a competing framework called Topic Maps (ref) where what was described was called a subject which also presupposed a lighter ontological commitment]
 
 ## Graph
 
@@ -97,3 +97,22 @@ let value = make.literal("10000000")
 let boxOfficeStatement = make.quad(node, predicate, value)
 ```
 The underlying basic RDF objects are straight from the (RDFJS Data Model)[https://rdf.js.org/data-model-spec/]. The FDR factory methods come in handy when dealing with some FDR specific abstraction as well as context-based namespace resolution. More on this below.
+
+## Subjects
+
+Subjects in FDR are what RDF calls resources with some added programming semantics. A subject is some one talks about, or one has information about. In more practical terms, it is the thing that has attributes (a.k.a. _data properties_ in OWL world) and relationships (a.k.a. _object properties_). Ironically and confusingly, one might decide to call this abstraction an _object_, but we will want to reconstruct more complete object-oriented structure later on. 
+
+A subject instance is always tied to a graph and the only way to create it is via the `DataSpecFactory` of the graph. The identifier of a subject, a `SubjectId`, is typically just an IRI, but can also be other things such as a complete `Quad` for backends that support metadata on statements. 
+
+To create a subject:
+
+```
+let movie = graph.factory.subject(new IRISubjectId('https://swapi.co/resource/film/5'))
+```
+
+That gives a `Subject` instance alright and you can work with its properties. However, the instance *may* not yet be available for use. You see, the properties of the subject are back in the triplestore and merely constructing an instance will not fetch them. FDR maintains a cache (that's what the `LocalGraph` does to a large extent) and at any point in time a subject may or may not be in that cache. To ensure that it is available, you need to call the async `use` function:
+
+```
+await graph.use(movie)
+```
+
