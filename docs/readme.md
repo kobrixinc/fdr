@@ -86,5 +86,14 @@ let graph = new LocalGraph(sparqlClient)  // TODO - is 'id' needed here?
 ```
 
 
+FDR offers some factory methods that go along with its APIs all collected under the `fdr/make` class. Here are a few examples:
 
+```
+import { make } from '@kobrix/fdr'
 
+let predicate = make.named('https://swapi.co/vocabulary/boxOffice')
+let node = make.named('https://swapi.co/resource/film/5')
+let value = make.literal("10000000")
+let boxOfficeStatement = make.quad(node, predicate, value)
+```
+The underlying basic RDF objects are straight from the (RDFJS Data Model)[https://rdf.js.org/data-model-spec/]. The FDR factory methods come in handy when dealing with some FDR specific abstraction as well as context-based namespace resolution. More on this below.
