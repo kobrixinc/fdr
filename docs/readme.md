@@ -100,9 +100,9 @@ The underlying basic RDF objects are straight from the (RDFJS Data Model)[https:
 
 ## Subjects
 
-Subjects in FDR are what RDF calls resources with some added programming semantics. A subject is some one talks about, or one has information about. In more practical terms, it is the thing that has attributes (a.k.a. _data properties_ in OWL world) and relationships (a.k.a. _object properties_). Ironically and confusingly, one might decide to call this abstraction an _object_, but we will want to reconstruct more complete object-oriented structure later on. 
+Subjects in FDR are what RDF calls resources, but with some added programming semantics. A subject is something one talks about, or one has information about. In more practical terms, it is the thing that has attributes (a.k.a. _data properties_ in OWL world) and relationships (a.k.a. _object properties_). Ironically and confusingly, one might decide to call this abstraction an _object_, but we will want to reconstruct more complete object-oriented structure later on. 
 
-A subject instance is always tied to a graph and the only way to create it is via the `DataSpecFactory` of the graph. The identifier of a subject, a `SubjectId`, is typically just an IRI, but can also be other things such as a complete `Quad` for backends that support metadata on statements. 
+A subject instance is always tied to a graph and the only way to create it is via the `DataSpecFactory` of the graph. The identifier of a subject, a `SubjectId`, is typically just an IRI, but can also be other things such as a complete `Quad` for backends that support metadata on statements (e.g. `RDF*`). 
 
 To create a subject:
 
@@ -116,3 +116,17 @@ That gives a `Subject` instance alright and you can work with its properties. Ho
 await graph.use(movie)
 ```
 
+The `use` method declares that the data is needed and is going to be accessed. A good way to think about this operation is as "load from backend if not already in cache". Note that we are assigning the `graph.use` return value to anything. It will just return the `movie` JavaScript, so we could shorten the above two statements as:
+
+```
+let movie = await graph.use(graph.factory.subject(new IRISubjectId('https://swapi.co/resource/film/5')))
+```
+
+The implementation of the `Subject` interface is tied to the graph's local cache and the semantics of `graph.use` will depend on the particular `DataSpec` one is dealing with.
+
+At any point in time, one can check whether a given `DataSpec` is ready for use:
+
+```
+if (!movie.ready)
+    await graph.use(movie)
+```
