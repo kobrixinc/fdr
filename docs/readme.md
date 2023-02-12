@@ -130,3 +130,24 @@ At any point in time, one can check whether a given `DataSpec` is ready for use:
 if (!movie.ready)
     await graph.use(movie)
 ```
+
+To access the properties of a subject, you can use one of several methods:
+
+```
+let movieTitle = movie.get('rdfs:label') // access a single-valued attribute
+let characters = movie.getAll('voc:character') // access of multi-valued relationships
+let properties = movie.propertyNames() // the names of all properties, for example to iterate over
+```
+
+You can go meta (think [RDF*](https://www.w3.org/2021/12/rdf-star.html])) and get a reference, as a `Subject`, of a property statement (i.e. a triple):
+
+```
+  let characterStatement: Subject = movie.propertyAsSubject("voc:character", make.named("https://swapi.co/resource/mirialan/65"))
+  
+  // characterStatement is a Subject you can get and set properties of, for example:
+  let actor = characterStatement.get("voc:playedBy")  
+```
+
+So a subject can be either an RDF resource of a triple and the difference can be seen through the concrete instance of `Subject.id: SubjectId` property. It will be either an IRI or a `PropertyValueIdentifier` instance, which is essentially a triple-as-identifier object.
+
+
