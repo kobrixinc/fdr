@@ -150,4 +150,21 @@ You can go meta (think [RDF*](https://www.w3.org/2021/12/rdf-star.html])) and ge
 
 So a subject can be either an RDF resource of a triple and the difference can be seen through the concrete instance of `Subject.id: SubjectId` property. It will be either an IRI or a `PropertyValueIdentifier` instance, which is essentially a triple-as-identifier object.
 
+Subject can be modified by setting properties:
 
+```
+  // Set a single value, replace any and all previous values
+  movie.set("voc:boxOffice", make.literal("200 million")) 
+  
+  // To set multiple values, replacing any and all previous values, just list more
+  // arguments to the setter method
+  movie.set("voc:character", 
+             make.named("https://swapi.co/resource/human/1"), 
+             make.named("https://swapi.co/resource/human/2"),
+             make.named("https://swapi.co/resource/human/3"))  
+  
+  // Add more values without removing any current values
+  movie.setMore("voc:character", make.named("https://swapi.co/resource/human/165"))
+```
+
+## Change Management
