@@ -168,3 +168,11 @@ Subject can be modified by setting properties:
 ```
 
 ## Change Management
+
+Given any mutable `DataSpec` such as a `Subject` that we want to use in an interactive application, the question arises: how does one deal with the state of the data object changing? Specifically, we have several different scenarios to account for:
+
+1. What if the backend store is changed in a way that affects the data spec?
+2. What if our code directly modifies the data - how is that saved to the backend? And is that propagated to the presentation layer to update the view?
+3. What if the end-user interacts with the GUI in a way that should be propagated to the knowledge graph? In other words, how do we get from the view layer to the cached `DataSpec` and/or to the backend? Is the `DataSpec` a GUI reactive object itself? What are consequences if we allow that?
+
+Those are not easy questions. In our experience developing browser based applications backed by a semantic data model, they tend to generate a fair amount of complexity when there is no clear change propagation model.
