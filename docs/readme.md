@@ -178,3 +178,6 @@ Given any mutable `DataSpec` such as a `Subject` that we want to use in an inter
 Those are not easy questions. In our experience developing browser based applications backed by a semantic data model, they tend to generate a fair amount of complexity when there is no clear change propagation model.
 
 One of the biggest source of complexity are the multiple GUI views a given piece of data (think of a set of triples forming some programming data structure) participates in. There could be a form for editing some information alongside a table view alongside a graph visualization, perhaps also editable. Browser GUI frameworks like VueJS and React _sort of_ solve this through their reactivity functionality. But that's only part of the solution - if we have the same global reactive object serving as a model of multiple GUI components, things can get out of control quickly since reactivity causes all sorts of side-effects that re-render the UI and generally affects the interaction logic in a fairly complex way. Therefore, GUI reactivity is best localized to a a single component [TODO: need to elaborate a bit more here, perhaps with some intuitive example]]
+
+![image](https://user-images.githubusercontent.com/918099/218691682-9ebb8395-7f41-4314-b859-0c544981c73f.png)
+
