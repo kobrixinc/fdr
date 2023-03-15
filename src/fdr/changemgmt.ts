@@ -67,18 +67,48 @@ export class PropertyReplaced implements PropertyChange {
               readonly annotation?: any[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
     const result = [] as QuadChange[]
+
+    //a bitmap marking whether a new value was present before the change
+    const preexistingValues = this.newvalue.map(() => false)
     
+    /*
+     * Delete the old values which are not getting reinserted 
+     */
     for (const oneOldValue of this.oldvalue) {
-      const quad = new PropertyValueIdentifier(subject.id, this.name, oneOldValue).toQuad()
-      result.push(new QuadRemoved(quad))
+    
+      const indexInNewValues = this.newvalue.findIndex(oneNewValue => {
+        if (oneOldValue instanceof SubjectImpl) {
+          if (oneOldValue.id == (oneNewValue as Subject).id) return true
+        }
+        else {
+          return oneNewValue == oneOldValue
+        }
+      })
+      
+      /*
+      if the value is to be reinserted, do not delete it, just mark it 
+      as present
+      */
+      if (indexInNewValues >= 0) {
+        //mark as preexisting, so the value will not be reinserted 
+        preexistingValues[indexInNewValues] = true
+      }
+      else {
+        const quad = new PropertyValueIdentifier(subject.id, this.name, oneOldValue).toQuad()
+        result.push(new QuadRemoved(quad))
+      }
     }   
    
     for (const i in this.newvalue)
     {
-      const oneNewValue = this.newvalue[i] as (Subject|LiteralValue)
-      const quad = new PropertyValueIdentifier(subject.id, this.name, oneNewValue).toQuad()
-      const change = new QuadAdded(quad)
-      result.push(change)
+      if (!preexistingValues[i]) {
+        //the value is not preexisting, so add it
+        const oneNewValue = this.newvalue[i] as (Subject|LiteralValue)
+        
+        const quad = new PropertyValueIdentifier(subject.id, this.name, oneNewValue).toQuad()
+        const change = new QuadAdded(quad)
+        result.push(change)
+      }
     }
             
     return result
