@@ -78,7 +78,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       res = this.obj(prop)
     }
     if (res instanceof Array)
-      return res
+      return res.slice(0, res.length)
     else
       return [res]
 
