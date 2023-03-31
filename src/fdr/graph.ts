@@ -46,6 +46,7 @@ export interface Graph {
 export class LocalGraph implements Graph { 
 
   public id : string
+  public label : string
   readonly nameResolver: NameResolver
   readonly factory: DataSpecFactory
   client: TripleStoreClient
@@ -89,7 +90,9 @@ export class LocalGraph implements Graph {
       const res = new SubjectImpl(resolve(id), this.graph)
       this.graph.cache.subjects.set(resolved, res)
       return res 
+    
     }
+    
 
     // subject(id: string): SubjectImpl {
     //   id = this.graph.nameResolver.resolve(id)
@@ -102,11 +105,12 @@ export class LocalGraph implements Graph {
     // }
   }
 
-  constructor(client: TripleStoreClient, id : string) {
+  constructor(client: TripleStoreClient, id : string, label : string = id) {
     this.client = client
     this.factory = new LocalGraph.factory_impl(this)
     this.nameResolver = resolvers.default()
     this.id = id
+    this.label = label
   }
 
   /**
