@@ -842,11 +842,24 @@ function union<T>(
   a : T[], 
   b : T[]) : T[] {
     const res = [] as T[]
-    for (const el of a)
+    for (const el of a) {
       res.push(el)
+    }
 
-    for (const el of b)
-      res.push(el)
+    for (const el of b) {
+      const index = res.findIndex(element => {
+        if (type_guards.isLiteralValue(element)) {
+          return element == el
+        }
+        else if (type_guards.isSubjectValue(element)) {
+          return (element as Subject).id.equals((el as Subject).id)
+        }
+      })
+
+      if (index < 0) {
+        res.push(el)
+      }
+    }
     return res
 }
 
