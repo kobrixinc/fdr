@@ -166,7 +166,6 @@ export class LocalGraph implements Graph {
 
   async use<T extends DataSpec<any>>(desc: T): Promise<T> {
     //local graph only uses RemoteDataSpecs
-    debugger
     let result = desc  
     if (!type_guards.isRemoteDataSpec(desc))
       throw new Error(`${desc} is expected to be a RemoteDataSpec`)

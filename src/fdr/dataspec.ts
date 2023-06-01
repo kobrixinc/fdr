@@ -39,7 +39,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   propertyAsSubject(propertyName: string, value: PropertyValue): Subject {
     const id = new PropertyValueIdentifier(this.id, propertyName, value)
     const subject = (this as unknown as SubjectBase).getGraph().factory.subject(id)
-    debugger
     return subject
   }
 
@@ -405,7 +404,6 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   
   get query() { 
     if (this.id instanceof PropertyValueIdentifier) {
-      debugger
       return {
         type: 'Subject',
         propertyValueIdentifier : {
@@ -885,7 +883,6 @@ export class PropertyValueIdentifier implements SubjectId {
    * @returns 
    */
   toQuad() : Quad {
-    debugger
     /**
      * recursively convert a property of a specific suject to a Quad 
      * @param subject 
