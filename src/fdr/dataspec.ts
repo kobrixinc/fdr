@@ -890,7 +890,7 @@ export class PropertyValueIdentifier implements SubjectId {
   equals(other: SubjectId) {
     const pvi =  other as PropertyValueIdentifier
     if (pvi.subject) {
-      if (this.subject.equals(pvi.subject) && this.property == this.property) {
+      if (this.subject.equals(pvi.subject) && this.property == pvi.property) {
         if (type_guards.isSubjectValue(this.value)) {
           if (type_guards.isSubjectValue(pvi.value)) {
             return this.value.id.equals(pvi.value.id)    
