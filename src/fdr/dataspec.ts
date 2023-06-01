@@ -506,8 +506,15 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
       const quadchanges = change.toQuadChanges(this)
       changes = changes.concat(quadchanges)
     })
-    await this.graph.client.modify(changes)
-    this.changes.splice(0, this.changes.length)
+    try {
+      const result = await this.graph.client.modify(changes)
+      if (!result.ok) {
+        throw new Error(`Could not commit changes ${changes}`)
+      }
+    }
+    finally {
+      this.changes.splice(0, this.changes.length)
+    }
   }
 
   /*

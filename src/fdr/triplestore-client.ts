@@ -29,9 +29,9 @@ export interface TripleStoreClient {
    * 
    * @param changes The changes will result in a SPARQL query where they are applied
    * in the passed in order.
-   * @return { ok: boolean, error?:string }
+   * @return 
    */
-  modify(changes: Array<QuadChange>): Promise<{ok:boolean, error?: string }>
+  modify(changes: Array<QuadChange>): Promise<any>
   
 }
 
