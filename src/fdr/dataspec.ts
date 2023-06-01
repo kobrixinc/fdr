@@ -344,10 +344,23 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
         this.properties![change.name] = change.newvalue
       }
       else if (change instanceof PropertyRemoved) {
-        /*
-        TODO PropertyRemoved deletes specific values, not the entire property!
-        */
-        delete this.properties![change.name]
+        let oldValues = asArray(this.properties![change.name] as LiteralValue|LiteralValue[]|Subject|Subject[])
+        for (let toRemove of change.value) {
+          if (toRemove instanceof SubjectImpl) {
+            const asSubject = toRemove
+            const index = oldValues.findIndex(v => (v as SubjectImpl).id.equals(asSubject.id))
+            if (index >= 0) {
+              oldValues.splice(index, 1)
+            }
+          }
+          else {
+            const asLiteral = toRemove as LiteralValue
+            const index = oldValues.findIndex(v => v == asLiteral)
+            if (index >= 0) {
+              oldValues.splice(index, 1)
+            }
+          }
+        }
       }
     }    
   }
