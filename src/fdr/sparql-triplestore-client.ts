@@ -3,9 +3,7 @@ import datasetFactory from "@rdfjs/dataset"
 import { make } from "./fdr.js"
 import { TripleStoreClient } from "./triplestore-client.js"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt.js"
-
-let fetch = global['fetch'] ?? (await import('node-fetch')).default
-console.log('fetch',  fetch)
+import fetch from "isomorphic-fetch"
 
 export class SparqlClient {
   constructor(readonly readEndpoint: string, 
@@ -22,14 +20,26 @@ export class SparqlClient {
       var encodedValue = encodeURIComponent(details[property])
       formBody.push(encodedKey + "=" + encodedValue)
     }
+
+    // const url = new URL(this.readEndpoint);
+    // url.searchParams.append('query', query);
+    // url.searchParams.append('format', 'json');
+    // let result = await fetch(url)
+
+    console.log('select body', formBody.join("&"))
+
     let result = await fetch(this.readEndpoint, {
-      method: 'post',
+      method: 'POST',
+      redirect: 'manual',
       headers: {
         'Content-Type':'application/x-www-form-urlencoded',
-        'Accept':'application/json'
+        'Accept':'application/sparql-results+json'
       },
       body: formBody.join("&")
     })
+
+    console.log('SPARQL fetch result', result)
+    
     if (result.status != 200)
       throw new Error(await result.text())
     let matches: Array<object> = []
@@ -45,7 +55,7 @@ export class SparqlClient {
 
   async update(query: string): Promise<object> {
     console.log(query)
-    let result = await fetch(this.updateEndpoint, {
+    let result = await httpfetch(this.updateEndpoint, {
       method: 'post',
       headers: {
         'Content-Type': 'application/sparql-update'
@@ -59,8 +69,7 @@ export class SparqlClient {
   }
 }
 
-
-class SPARQLProtocolClient implements TripleStoreClient {
+export class SPARQLProtocolClient implements TripleStoreClient {
 
   client: SparqlClient
   graphs: Set<NamedNode>

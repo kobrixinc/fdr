@@ -8,8 +8,8 @@ export class make {
   static named(iri) { return mf.namedNode(iri) }
   static literal(iri) { return mf.literal(iri) }
 
-  static quad(x: NamedNode, y: NamedNode, z: Quad_Object, g?:Quad_Graph) { 
-    return mf.quad(x, y, z, g) 
+  static quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph) { 
+    return mf.quad(x, y, z as Quad_Object, g) 
   }
   
   // TODO: the term in object position here, the 'z' argument can also be a quad
