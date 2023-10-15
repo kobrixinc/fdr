@@ -18,7 +18,7 @@ import { QuadChange } from "./changemgmt.js"
  * including at the interface level, to implementations.
  * </p>
  */
-export interface TripleStoreClient {
+export interface TripleStore {
   /**
    * Retrieve all triples asserted for a given list of subjects. The subjects
    * can be regular `NamedNode` or a quad (triple in a named graph).
@@ -54,4 +54,19 @@ export interface DatasetIngester {
    * @param dataset 
    */
   ingest(dataset: Dataset|string[]): void
+}
+
+export interface SPARQLEndpoint {
+  /**
+   * Run a SPARQL select query and return a list of matches in
+   * the form of binding objects indexed by the variables in the
+   * select clause.
+   * 
+   * @param query A valid SPARQL select query. For example
+   * `select ?sub ?label where { ?sub rdfs:label ?label }`
+   * @return An array of bindings, i.e. objects with properties
+   * the SPARQL select variables. For example 
+   * `[ {"sub":"http://dbpedia.org/resource/New_York_City", "label": "Mew York" } ]`
+   */
+  sparqlSelect(query: { queryString: string } ): Promise<Array<object>>
 }

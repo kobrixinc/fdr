@@ -1,7 +1,7 @@
 import { Quad } from "@rdfjs/types"
 import { Subject, SubjectId } from "./dataspecAPI.js"
 import { PropertyValueIdentifier, SubjectImpl } from "./dataspec.js"
-import { make, LiteralValue } from "./fdr.js"
+import { LiteralValue } from "./fdr.js"
 
 export class KBChange {
   constructor() { }

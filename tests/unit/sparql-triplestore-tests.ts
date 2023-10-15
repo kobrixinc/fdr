@@ -1,6 +1,6 @@
 import { assert } from "chai"
 import { DatasetCore, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
-import { make } from "../../src/fdr/fdr.js"
+import { rdfjs } from "../../src/fdr/fdr.js"
 import SPARQLProtocolClient, { SparqlClient } from "../../src/fdr/sparql-triplestore-client.js"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "../../src/fdr/changemgmt.js"
 
@@ -43,22 +43,22 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
 
   it('Fetches a subject with properties', async () => {
     let endpoint = setupEndpoint()
-    let data = await endpoint.fetch(make.named("https://swapi.co/resource/film/5"))
+    let data = await endpoint.fetch(rdfjs.named("https://swapi.co/resource/film/5"))
     let quads = coreSetToArray(data)
-    let boxoffice = data.match(null, make.named('https://swapi.co/vocabulary/boxOffice'), null, null)
+    let boxoffice = data.match(null, rdfjs.named('https://swapi.co/vocabulary/boxOffice'), null, null)
     assert(boxoffice.size > 0, "Could not find voc:boxOffice property")
   })
   
   it('Update the value of boxoffice', async () => {
     let endpoint = setupEndpoint()
-    let film = make.named("https://swapi.co/resource/film/5")
-    let boxofficeProp = make.named('https://swapi.co/vocabulary/boxOffice')
+    let film = rdfjs.named("https://swapi.co/resource/film/5")
+    let boxofficeProp = rdfjs.named('https://swapi.co/vocabulary/boxOffice')
     let changes = 
       valuesOf(boxofficeProp, (await endpoint.fetch(film))).map(val =>
-      new QuadRemoved(make.quad(film, boxofficeProp, val)))
+      new QuadRemoved(rdfjs.quad(film, boxofficeProp, val)))
 
     let newboxoffice = "" + Math.random()*1000000
-    changes.push(new QuadAdded(make.quad(film, boxofficeProp, make.literal(newboxoffice))))
+    changes.push(new QuadAdded(rdfjs.quad(film, boxofficeProp, rdfjs.literal(newboxoffice))))
 
     let result = await endpoint.modify(changes)
     assert(result.ok, result.error)
@@ -71,8 +71,8 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
 
   it('Can store and fetch annotations', async () => {
     let endpoint = setupEndpoint()
-    let film = make.named("https://swapi.co/resource/film/5")
-    let boxofficeProp = make.named('https://swapi.co/vocabulary/boxOffice')
+    let film = rdfjs.named("https://swapi.co/resource/film/5")
+    let boxofficeProp = rdfjs.named('https://swapi.co/vocabulary/boxOffice')
     let confidences = {}
     let annotatedTriples: Array<Quad> = []
 
@@ -81,10 +81,10 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
     let changes: Array<KBChange> = 
       valuesOf(boxofficeProp, (await endpoint.fetch(film))).map(val => {
         confidences[val.value] = Math.random()
-        let triple = make.quad(film, boxofficeProp, val)
-        let quad = make.metaQuad(triple,
-                make.named("rdfs:label"), 
-                make.literal(confidences[val.value]),
+        let triple = rdfjs.quad(film, boxofficeProp, val)
+        let quad = rdfjs.metaQuad(triple,
+                rdfjs.named("rdfs:label"), 
+                rdfjs.literal(confidences[val.value]),
                 triple.graph)
         annotatedTriples.push(triple)
         return new QuadAdded(quad)
@@ -97,7 +97,7 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
     let storedAnnotations = await endpoint. fetch(...annotatedTriples)
     let errors: Array<string> = []
     changes = annotatedTriples.map(triple => {
-      let A = storedAnnotations.match(triple, make.named("rdfs:label"))
+      let A = storedAnnotations.match(triple, rdfjs.named("rdfs:label"))
       if (A.size == 0) {
         errors.push("No annotations stored for triple " + triple)
         return new NoChange()
@@ -109,7 +109,7 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
         if (confidences[(triple.object as Literal).value] != confidence.value)
           errors.push("Confidence value for " + triple.subject.value + " : " + triple.object.value + 
                 " is the unexpected " + confidence.value)
-        return new QuadRemoved(make.metaQuad(triple, make.named("rdfs:label"), confidence, triple.graph))
+        return new QuadRemoved(rdfjs.metaQuad(triple, rdfjs.named("rdfs:label"), confidence, triple.graph))
       }
     })
 

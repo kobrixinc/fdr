@@ -1,7 +1,8 @@
 import { Dataset, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
 import datasetFactory from "@rdfjs/dataset"
-import { make } from "./fdr.js"
-import { TripleStoreClient } from "./triplestore-client.js"
+import rdf from 'rdf-ext'
+import { rdfjs } from "./fdr.js"
+import { SPARQLEndpoint, TripleStore } from "./triplestore-client.js"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt.js"
 import fetch from "isomorphic-fetch"
 
@@ -26,7 +27,7 @@ export class SparqlClient {
     // url.searchParams.append('format', 'json');
     // let result = await fetch(url)
 
-    console.log('select body', formBody.join("&"))
+    // console.log('select body', formBody.join("&"))
 
     let result = await fetch(this.readEndpoint, {
       method: 'POST',
@@ -38,7 +39,7 @@ export class SparqlClient {
       body: formBody.join("&")
     })
 
-    console.log('SPARQL fetch result', result)
+    // console.log('SPARQL fetch result', result)
     
     if (result.status != 200)
       throw new Error(await result.text())
@@ -55,7 +56,7 @@ export class SparqlClient {
 
   async update(query: string): Promise<object> {
     console.log(query)
-    let result = await httpfetch(this.updateEndpoint, {
+    let result = await fetch(this.updateEndpoint, {
       method: 'post',
       headers: {
         'Content-Type': 'application/sparql-update'
@@ -69,7 +70,7 @@ export class SparqlClient {
   }
 }
 
-export class SPARQLProtocolClient implements TripleStoreClient {
+export class SPARQLProtocolClient implements TripleStore, SPARQLEndpoint {
 
   client: SparqlClient
   graphs: Set<NamedNode>
@@ -101,9 +102,9 @@ export class SPARQLProtocolClient implements TripleStoreClient {
 
   jsonToTerm(x: object): Literal|NamedNode{
     if (x['type'] == 'uri')
-      return make.named(x['value'])
+      return rdfjs.named(x['value'])
     else // if (x['type'] == 'literal')
-      return make.literal(x['value'])
+      return rdfjs.literal(x['value'])
   }
 
   constructor(readonly endpointUrl: string, 
@@ -207,43 +208,64 @@ export class SPARQLProtocolClient implements TripleStoreClient {
       let prop = this.jsonToTerm(row['property']) as NamedNode
       let value = this.jsonToTerm(row['value'])
       if (row.hasOwnProperty("metaproperty")) {
-        quads.push(make.metaQuad(make.quad(subject, prop, value), 
+        quads.push(rdfjs.metaQuad(rdfjs.quad(subject, prop, value), 
                    this.jsonToTerm(row["metaproperty"]) as NamedNode,
                    this.jsonToTerm(row["metavalue"])))
       }
       else if (self.propertyFilter.call(self, prop) &&
           self.valueFilter.call(self, value)) {
-          quads.push(make.quad(subject, prop, value))
+          quads.push(rdfjs.quad(subject, prop, value))
       }
     })
-    return datasetFactory.dataset(quads)
+    // return datasetFactory.dataset(quads)
+    return rdf.dataset(quads)
   }
 
-  async fetch_old(subject: NamedNode<string>): Promise<[Dataset<Quad>, object]> {
-    let self = this
-    let fromGraphs = ''
-    if (this.graphs.size > 0) {      
-      this.graphs.forEach(g => fromGraphs += ` FROM <${g.value}>\n` )
-    }
-    let data = await this.client.select(` 
-      SELECT ?prop ?value ${fromGraphs} WHERE {
-        <${subject.value}> ?prop ?value
-      }`
-    )
-    const quads: Array<Quad> = []
-    data.forEach( row => {
-      let prop = row['prop']
-      let value = row['value']
-      if (self.propertyFilter.call(self, prop) &&
-          self.valueFilter.call(self, value)) {
-          quads.push(make.quad(subject, prop, value))
-      }
-    })
-    return [datasetFactory.dataset(quads), {}]
-  }
+  // async fetch_old(subject: NamedNode<string>): Promise<[Dataset<Quad>, object]> {
+  //   let self = this
+  //   let fromGraphs = ''
+  //   if (this.graphs.size > 0) {      
+  //     this.graphs.forEach(g => fromGraphs += ` FROM <${g.value}>\n` )
+  //   }
+  //   let data = await this.client.select(` 
+  //     SELECT ?prop ?value ${fromGraphs} WHERE {
+  //       <${subject.value}> ?prop ?value
+  //     }`
+  //   )
+  //   const quads: Array<Quad> = []
+  //   data.forEach( row => {
+  //     let prop = row['prop']
+  //     let value = row['value']
+  //     if (self.propertyFilter.call(self, prop) &&
+  //         self.valueFilter.call(self, value)) {
+  //         quads.push(rdfjs.quad(subject, prop, value))
+  //     }
+  //   })
+  //   return [datasetFactory.dataset(quads), {}]
+  // }
   
-  query(query: object): Promise<any> {
-    throw new Error('Method not implemented.')
+  sparqlSelect(query: { queryString: string }): Promise<Array<object>> {
+    // let self = this
+    return this.client.select(query.queryString)
+    // const quads: Array<Quad> = []
+    // data.forEach( row => {      
+    //   let subject = this.jsonToTerm(row['subject']) as NamedNode
+    //   let prop = this.jsonToTerm(row['property']) as NamedNode
+    //   let value = this.jsonToTerm(row['value'])
+    //   if (row.hasOwnProperty("metaproperty")) {
+    //     quads.push(rdfjs.metaQuad(rdfjs.quad(subject, prop, value), 
+    //                this.jsonToTerm(row["metaproperty"]) as NamedNode,
+    //                this.jsonToTerm(row["metavalue"])))
+    //   }
+    //   else if (self.propertyFilter.call(self, prop) &&
+    //       self.valueFilter.call(self, value)) {
+    //       quads.push(rdfjs.quad(subject, prop, value))
+    //   }
+    // })
+    // // return datasetFactory.dataset(quads)
+    // return rdf.dataset(quads)
+
+    // throw new Error('Method not implemented.')
   }
 
   async modify(changes: KBChange[]): Promise<{ok:boolean, error?:string}> {

@@ -2,7 +2,7 @@
 import { BlankNode, Dataset, Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Variable } from "@rdfjs/types"
 import { asArray } from "../utils.js"
 import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { LiteralValue, make } from "./fdr.js"
+import { LiteralValue, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
 import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, PropertyValue, IRISubjectId } from "./dataspecAPI.js"
@@ -42,7 +42,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     return subject
   }
 
-
   /**
    * Enqueue a change to the buffer which will be sent to upstream sources 
    * of truth for synchronization 
@@ -52,21 +51,49 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     this.changes.push(...change)
   }
 
-  get(prop: string): Subject | LiteralValue | null {
-    let res
-    try {
-      res = this.val(prop)
-    } catch(error) {
-      res = this.obj(prop)
-    }
-    if (res instanceof Array) {
-      if (res.length > 0)
-        return res[0]
+  get(prop: string, lang?: string): Subject | LiteralValue | null {
+
+    if (!this.ready || this.properties == null)
+      throw new Error('Object not ready')
+
+    prop = this.resolveName(prop)
+
+    const x = this.properties[prop]    
+    let res: any 
+    if (x instanceof Array) {
+      if (x.length == 0)
+        return null
       else
-        return res[1]
+        res = x[0]
     }
-    else
-      return res
+      
+    if (type_guards.isLiteral(res)) {
+      return (res as Literal).value
+    }
+    else if (type_guards.isLiteralValue(res))
+       return res as LiteralValue
+    else if (type_guards.isSubjectValue(x))
+      return res as Subject
+    else 
+      throw new Error("Type mismatch - a property in a subject is of no recognizable JavaScript type.")
+
+    // try {
+    //   res = this.val(prop)
+    // } catch(error) {
+    //   res = this.obj(prop)
+    // }
+    // if (res instanceof Array) {
+    //   if (res.length > 0) {
+    //       res = res[0]
+    //   }
+    //   // TODO: I don't understand this else, commenting for the moment
+    //   // else
+    //   //   res = res[1]
+    // }
+    // if (type_guards.isLiteral(res))
+    //   return res.value
+    // else
+    //   return res
   }
 
   getAll(prop: string): Subject[] | LiteralValue[] {
@@ -82,7 +109,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       return res.slice(0, res.length)
     else
       return [res]
-
   }
 
   set(prop: string, ...object: Subject[] | LiteralValue[]): Subject {
@@ -464,7 +490,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   ingest(dataset : Dataset<Quad, Quad>): void {
     //isn't parseDataset and the logic after it duplicate?
     const props = parseDataset(this.graph, this.id, dataset)
-    const quads: Array<Quad> = Array.from(dataset['_quads'].values())
+    // const quads: Array<Quad> = Array.from(dataset['_quads'].values())
     // This dataset.filter method is documented as part of the DatasetCore interface
     // but it seems like it's not implemented yet. NEed to reach out to that rdfjs community
     // and maybe get implicated, help or whatever...
@@ -686,7 +712,7 @@ function parseDataset(graph : Graph, subjectId : SubjectId, dataset: Dataset<Qua
       newVal = graph.factory.subject(new IRISubjectId(quad.object.value))
     }
     else if (quad.object.termType == "Literal") {
-      newVal = quad.object.value
+      newVal = quad.object //.value
     }
     if (props[quad.predicate.value] instanceof Array) {
       props[quad.predicate.value].push(newVal)
@@ -696,8 +722,7 @@ function parseDataset(graph : Graph, subjectId : SubjectId, dataset: Dataset<Qua
     }
     else {
       props[quad.predicate.value] = newVal
-    }
-    
+    }    
   })
   // should we merge here instead? what are different kinds of ingestion of triples about this subject?    
   return props
@@ -727,7 +752,6 @@ export const type_guards = {
     return literal instanceof String || typeof literal == "string" || literal instanceof Boolean || typeof literal == "boolean" || literal instanceof Number || typeof literal == "number"
     || (literal instanceof Array && (literal.length == 0 || (typeof literal[0] === 'string' || typeof literal[0] === 'boolean' || typeof literal[0] === 'number')))
   },
-
   isRemoteDataSpec(dataSpec : DataSpec<any>) : dataSpec is RemoteDataSpec<any> {
     const asRemote = dataSpec as RemoteDataSpec<any>
     return asRemote.ingest !== undefined && asRemote.ready !== undefined
@@ -767,8 +791,7 @@ function setUnion(oldValues : LiteralValue[]|Subject[], newValues :LiteralValue[
         //this is actually a new value
         oldValues.push(newvalue)
         added.push(newvalue)
-      }
-    }
+      }    }
     return added
   }
   else if (type_guards.isLiteralValue(oldValues) && type_guards.isLiteralValue(newValues)) {
@@ -931,23 +954,23 @@ export class PropertyValueIdentifier implements SubjectId {
       let subjectInQuad : Quad|NamedNode
       let propertyInQuad : NamedNode 
       let objectInQuad : Quad|NamedNode|Literal
-      propertyInQuad = make.named(property)
+      propertyInQuad = rdfjs.named(property)
       if (subject instanceof PropertyValueIdentifier) {
         const pvi = subject as PropertyValueIdentifier
         subjectInQuad = makeQuad(pvi.subject, pvi.property, pvi.value)
       }
       else if (subject instanceof IRISubjectId) {
-        subjectInQuad = make.named(subject.iri) 
+        subjectInQuad = rdfjs.named(subject.iri) 
       }
       else {
         throw new Error(`${subject} is an unsupported type of subject`)
       }
      
       if (type_guards.isLiteralValue(value)) {
-        objectInQuad = make.literal(value)
+        objectInQuad = rdfjs.literal(value)
       } 
       else if (value.id instanceof IRISubjectId) {
-        objectInQuad = make.named(value.id.iri)
+        objectInQuad = rdfjs.named(value.id.iri)
       }
       else if (value.id instanceof PropertyValueIdentifier) {
         objectInQuad = makeQuad(value.id.subject, value.id.property, value.id.value)
@@ -957,8 +980,8 @@ export class PropertyValueIdentifier implements SubjectId {
       }
 
       return subjectInQuad.termType == 'NamedNode'
-        ? make.quad(subjectInQuad, propertyInQuad, objectInQuad) 
-        : make.metaQuad(subjectInQuad, propertyInQuad, objectInQuad) 
+        ? rdfjs.quad(subjectInQuad, propertyInQuad, objectInQuad) 
+        : rdfjs.metaQuad(subjectInQuad, propertyInQuad, objectInQuad) 
     }
     const newQuad = makeQuad(this.subject, this.property, this.value)
     return newQuad    
@@ -974,6 +997,3 @@ export class PropertyValueIdentifier implements SubjectId {
     )
   }
 }
-
-
-

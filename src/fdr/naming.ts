@@ -11,6 +11,15 @@ export interface NameResolver {
   inverse() : NameResolver
 }
 
+interface WithResolver {
+  resolver: NameResolver
+}
+
+
+class ResolverHolder implements WithResolver {
+  resolver = resolvers.default()
+}
+
 class AliasResolver implements NameResolver {
 
   private dict: Map<string, string>
@@ -193,4 +202,4 @@ const resolvers = {
   byPrefix: (prefixes: object) => new PrefixResolver(prefixes)
 }
 
-export { resolvers, standardPrefixes }
+export { ResolverHolder, WithResolver, resolvers, standardPrefixes }

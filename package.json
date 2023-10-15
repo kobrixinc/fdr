@@ -1,16 +1,17 @@
 {
   "name": "@kobrix/fdr",
-  "version": "0.0.14",
+  "version": "0.0.20",
   "description": "",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
-  "main2": "index.ts",
+  "main2": "no idea why I have to use dist/index.js to specify the main entry point instead of index.ts",
   "type": "module",
   "scripts": {
     "deploy": "npm run build && npx np",
     "build": "npx tsc -p tsconfig-build.json",
     "doc": "npx typedoc --tsconfig tsconfig-build.json src/index.ts",
     "dummy-test": "ts-mocha ./tests/unit/dummy-unit-test.ts",
+    "api-tests": "ts-mocha tests/unit/fdr-api-tests.ts",
     "test": "ts-mocha tests/**/*-tests.ts"
   },
   "repository": {
@@ -29,6 +30,7 @@
     "@rdfjs/types": "^1.1.0",
     "@types/isomorphic-fetch": "^0.0.36",
     "isomorphic-fetch": "^3.0.0",
+    "rdf-ext": "^2.2.0",
     "subscription": "^3.0.0"
   },
   "devDependencies": {

@@ -3,8 +3,8 @@ import { QuadChange } from "./changemgmt.js"
 import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
 import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
 import { NameResolver, resolvers } from "./naming.js"
-import { TripleStoreClient } from "./triplestore-client.js"
-import { make } from "./fdr.js"
+import { TripleStore } from "./triplestore-client.js"
+import { rdfjs } from "./fdr.js"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.
@@ -47,9 +47,9 @@ export class LocalGraph implements Graph {
 
   public id : string
   public label : string
-  readonly nameResolver: NameResolver
+  public nameResolver: NameResolver
   readonly factory: DataSpecFactory
-  client: TripleStoreClient
+  client: TripleStore
   private cache = { 
     subjects: new Map<SubjectId, SubjectImpl>()
   } 
@@ -105,7 +105,7 @@ export class LocalGraph implements Graph {
     // }
   }
 
-  constructor(client: TripleStoreClient, id : string, label : string = id) {
+  constructor(client: TripleStore, id : string, label : string = id) {
     this.client = client
     this.factory = new LocalGraph.factory_impl(this)
     this.nameResolver = resolvers.default()
@@ -177,7 +177,7 @@ export class LocalGraph implements Graph {
           data = await this.client.fetch(id.toQuad()) 
         }
         else if (id instanceof IRISubjectId){
-          data = await this.client.fetch(make.named(id.iri)) 
+          data = await this.client.fetch(rdfjs.named(id.iri)) 
         }
         else {
           throw new Error(`${id} is neither IRI, nor property value identifier`)
