@@ -9,6 +9,7 @@
   "scripts": {
     "deploy": "npm run build && npx np",
     "build": "npx tsc -p tsconfig-build.json",
+    "watch": "npx tsc -w -p tsconfig-build.json",
     "doc": "npx typedoc --tsconfig tsconfig-build.json src/index.ts",
     "dummy-test": "ts-mocha ./tests/unit/dummy-unit-test.ts",
     "api-tests": "ts-mocha tests/unit/fdr-api-tests.ts",

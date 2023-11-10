@@ -51,6 +51,24 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     this.changes.push(...change)
   }
 
+  // Find, in the array of literals the one matching the required language, or
+  // as a fallback, the one that has no language specified.
+  protected literalWithLang(values: Array<Literal>, lang?: string): Literal {
+    let result: Literal | null = null
+    if (!lang && this.getGraph()) {
+
+    }
+    for (let idx in values) {
+      if (values[idx].language == lang)
+        result = values[idx]
+      else if ( (!result || !lang) && !values[idx].language)
+        result = values[idx]
+    }
+    if (!result && !lang)
+      result = values[0]
+    return result!
+  }
+
   get(prop: string, lang?: string): Subject | LiteralValue | null {
 
     if (!this.ready || this.properties == null)
@@ -58,61 +76,55 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
 
     prop = this.resolveName(prop)
 
-    const x = this.properties[prop]    
+    const propEntry = this.properties[prop]    
     let res: any 
-    if (x instanceof Array) {
-      if (x.length == 0)
+    if (propEntry instanceof Array) {
+      if (propEntry.length == 0)
         return null
       else
-        res = x[0]
+        res = propEntry[0]
     }
-      
+    else if (propEntry)
+      res = propEntry
+    else
+      return null
+
     if (type_guards.isLiteral(res)) {
+      if (!lang)
+        lang = this.getGraph().env.config.lang
+      let langIsOptional = false
+      if (lang && lang.endsWith("?")) {
+        lang = lang.replace("?", "")
+        langIsOptional = true
+      }
+      if (propEntry instanceof Array)
+        res = this.literalWithLang(propEntry, lang)
+      if (res == null && langIsOptional) 
+        res = propEntry[0]
       return (res as Literal).value
     }
     else if (type_guards.isLiteralValue(res))
        return res as LiteralValue
-    else if (type_guards.isSubjectValue(x))
+    else if (type_guards.isSubjectValue(res))
       return res as Subject
     else 
       throw new Error("Type mismatch - a property in a subject is of no recognizable JavaScript type.")
-
-    // try {
-    //   res = this.val(prop)
-    // } catch(error) {
-    //   res = this.obj(prop)
-    // }
-    // if (res instanceof Array) {
-    //   if (res.length > 0) {
-    //       res = res[0]
-    //   }
-    //   // TODO: I don't understand this else, commenting for the moment
-    //   // else
-    //   //   res = res[1]
-    // }
-    // if (type_guards.isLiteral(res))
-    //   return res.value
-    // else
-    //   return res
   }
 
   getAll(prop: string): Subject[] | LiteralValue[] {
-    let res
-    try {
-      res = this.val(prop)
-    } catch(error) {
-      res = this.obj(prop)
-    }
-    if (res == null)
-      return []
-    else if (res instanceof Array)
-      return res.slice(0, res.length)
+    if (!this.ready || this.properties == null)
+      throw new Error('Object not ready')
+    prop = this.resolveName(prop)    
+    let propEntry = this.properties[prop]
+    if (propEntry instanceof Array)
+      return propEntry
     else
-      return [res]
+      return [propEntry]
   }
 
   set(prop: string, ...object: Subject[] | LiteralValue[]): Subject {
     let res : any
+    prop = this.resolveName(prop)    
     if (type_guards.isSubjectValue(object))
       res = this.setObj(prop, ...object)
     else if (type_guards.isLiteralValue(object))
@@ -156,32 +168,27 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
 
-    const x = this.properties[prop]
-    if (x) {
-      if (type_guards.isSubjectValue(x)) {
-        if (x instanceof Array)
-        {
-          if (x.length == 0) return null
-          else if (x.length == 1) return x
-          else return x
-        } 
-        else {
-          return [x]
-        }       
-      }
-      else {
-        throw new Error(`property ${prop} requested as an object property but is
-        data property with value ${x}`)
-      }
-
+    const propEntry = this.properties[prop]
+    let single: Subject | Literal | null
+    if (propEntry instanceof Array) {
+      if (propEntry.length == 0)
+        single = null
+      else // if (propEntry.length >= 1)
+        single = propEntry[0]
     }
-    else {
+    else 
+      single = propEntry
+    
+    if (single == null)
       return null
-    }
+    else if (!type_guards.isSubjectValue(single))
+      throw new Error(`property ${prop} requested as an object property but is
+         data property with value ${single}`)    
+    else 
+      return propEntry as Subject[]
   }
 
   private setObj(prop: string, ...object: Subject[]): Subject {
-    prop = this.resolveName(prop)
     let change : PropertyChange|undefined
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
@@ -226,7 +233,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   }
 
   private deleteObject(prop: string, ...object: Subject[]): Subject {
-    // const resolver = this.graph.nameResolver
     prop = this.resolveName(prop)
 
     if (!this.ready || this.properties == null)
@@ -244,33 +250,31 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     return this    
   }
   
-  private val(prop: string): LiteralValue[] | null {
+  /**
+   * Return the set of values of a data property. Throw an exception if 
+   * the values are not RDF literals.
+   * @param prop The name of the property.
+   */
+  private val(prop: string): Literal[] | null {
     prop = this.resolveName(prop)
 
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
 
-    const x = this.properties[prop]
-    if (x) {
-      if (type_guards.isLiteralValue(x)) {
-        if (x instanceof Array) {
-          if (x.length == 0) return null
-          else if (x.length == 1) return x
-          else return x
-        }
-        else {
-          return [x]
-        }
-      }
-      else {
+    const propEntry = this.properties[prop]
+    if (!propEntry)
+      return []
+    if (propEntry instanceof Array) {
+      if (propEntry.length > 0 && !type_guards.isLiteral(propEntry[0]))
         throw new Error(`property ${prop} requested as a literal value but is
-          object property with value ${x}`)
-      }
+          object property with value ${propEntry[0]}`)
+      return propEntry
     }
-    else {
-      return null
-    }
-        
+    else if (!type_guards.isLiteral(propEntry))
+      throw new Error(`property ${prop} requested as a literal value but is
+      object property with value ${propEntry}`)
+    else
+      return [propEntry as Literal]
   }
 
   /**
@@ -282,16 +286,15 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * @returns 
    */
   private setVal(prop: string, ...val: LiteralValue[]): Subject {
-    prop = this.resolveName(prop)
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
 
     let change : PropertyChange|null = null
     if (this.properties.hasOwnProperty(prop)) {
-      change = new PropertyReplaced(prop, asArray(this.val(prop)), val)
+      change = new PropertyReplaced(prop, asArray(this.val(prop)), val.map(x => rdfjs.literal(x)))
     }
     else {
-      change = new PropertyAdded(prop, val)
+      change = new PropertyAdded(prop, val.map(x => rdfjs.literal(x)))
     }  
     this.enqueueToChangeBuffer(change)
 
@@ -307,31 +310,33 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * @returns 
    */
   private setMoreValues(prop: string, ...val: LiteralValue[]): Subject {
-    // const resolver = this.graph.nameResolver
     prop = this.resolveName(prop)
 
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
+
+    let newval = val.map(v => rdfjs.literal(v))      
     let change
+
     if (this.properties.hasOwnProperty(prop)) {
-      let oldval = this.properties[prop]
-      if (type_guards.isLiteralValue(oldval)) {
-        const oldValAsArray = oldval instanceof Array ? oldval : [oldval]
-        /*
-        we assume that union adds the new values after the old and that it preserves the order of the old values
-        TODO check if we actually do that! 
-        */
-        const inserted = union(oldValAsArray, val)
-        change = new PropertyReplaced(prop, oldValAsArray, inserted)
-        
+      let oldval: Literal[] | Literal = this.properties[prop]
+      if (!oldval)
+        oldval = []
+      else if (! (oldval instanceof Array))
+        oldval = [oldval]
+      
+      if (oldval.length > 0) {
+        if (!type_guards.isLiteral(oldval[0]))
+          throw new Error(`Trying to add literal into a property which contains
+          non literals ${oldval}`)      
+        const inserted = union(oldval, newval)
+        change = new PropertyReplaced(prop, oldval, inserted)        
       }
-      else {
-        throw new Error(`Trying to add literal into a property which contains
-        non literals ${oldval}`)
-      }
+      else
+        return this
     }
     else {
-      change = new PropertyAdded(prop, val)
+      change = new PropertyAdded(prop, newval)
     }
     this.enqueueToChangeBuffer(change)
     this.apply([change])
@@ -339,7 +344,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   }
 
   private deleteValue(prop: string, ...val: LiteralValue[]): Subject {
-    // const resolver = this.graph.nameResolver
     prop = this.resolveName(prop)
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
@@ -348,7 +352,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       let oldval = this.properties[prop]
       const oldValAsArray = oldval instanceof Array ? oldval : [oldval]      
       // const removed = intersect(oldValAsArray, val)
-      const change = new PropertyRemoved(prop, val)
+      const change = new PropertyRemoved(prop, val.map(x => rdfjs.literal(x)))
       this.enqueueToChangeBuffer(change)
       this.apply([change])
     }
@@ -370,7 +374,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
         this.properties![change.name] = change.newvalue
       }
       else if (change instanceof PropertyRemoved) {
-        let oldValues = asArray(this.properties![change.name] as LiteralValue|LiteralValue[]|Subject|Subject[])
+        let oldValues = asArray(this.properties![change.name] as Literal|Literal[]|Subject|Subject[])
         for (let toRemove of change.value) {
           if (toRemove instanceof SubjectImpl) {
             const asSubject = toRemove
@@ -380,8 +384,8 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
             }
           }
           else {
-            const asLiteral = toRemove as LiteralValue
-            const index = oldValues.findIndex(v => v == asLiteral)
+            const asLiteral = toRemove as Literal
+            const index = oldValues.findIndex(v => (v as Literal).value == asLiteral.value)
             if (index >= 0) {
               oldValues.splice(index, 1)
             }
@@ -510,16 +514,33 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   }
 
   workingCopy(reactivityDecorator?: <T extends Subject>(original: T) => T): Subject {
+    const handler: ProxyHandler<Subject> = {
+      get(target, prop /*, receiver */) {
+        let s = target as Subject
+        // Here we are treating RDF properties (full IRIs) the same as JavaScript
+        // properties (that certainly don't look like URI). Maybe a better approach
+        // would be to inspect the name of the property and separate RDF from JavaScript (e.g. function calls)
+        let x = target.get(prop.toString())
+        return x || target[prop] 
+      },
+      set(target, prop, value) {
+        let s = target as Subject
+        target.set(prop.toString(), value)
+        return true
+      }
+    }
     let result = new SubjectLightCopy(
       this, 
       () => this.graph, 
       (name) => this.graph.nameResolver.resolve(name))
+    result = new Proxy<SubjectLightCopy>(result, handler)
     if (reactivityDecorator)
       result = reactivityDecorator(result)
     else if (this.graph.reactivityDecorator)
       result = this.graph.reactivityDecorator(result)
    
     this.workingCopies.push(result)
+
     return result
   }
 
@@ -707,6 +728,7 @@ function parseDataset(graph : Graph, subjectId : SubjectId, dataset: Dataset<Qua
       }
     })
     .forEach( quad => {
+      // console.log(quad)
     let newVal
     if (quad.object.termType == "NamedNode") {
       newVal = graph.factory.subject(new IRISubjectId(quad.object.value))
@@ -749,8 +771,16 @@ export const type_guards = {
   },
 
   isLiteralValue(literal): literal is LiteralValue|LiteralValue[] {
-    return literal instanceof String || typeof literal == "string" || literal instanceof Boolean || typeof literal == "boolean" || literal instanceof Number || typeof literal == "number"
-    || (literal instanceof Array && (literal.length == 0 || (typeof literal[0] === 'string' || typeof literal[0] === 'boolean' || typeof literal[0] === 'number')))
+    return literal instanceof String || 
+           typeof literal == "string" || 
+           literal instanceof Boolean || 
+           typeof literal == "boolean" || 
+           literal instanceof Number || 
+           typeof literal == "number" || 
+           (literal instanceof Array && (literal.length == 0 || 
+            (typeof literal[0] === 'string' || 
+            typeof literal[0] === 'boolean' || 
+            typeof literal[0] === 'number')))
   },
   isRemoteDataSpec(dataSpec : DataSpec<any>) : dataSpec is RemoteDataSpec<any> {
     const asRemote = dataSpec as RemoteDataSpec<any>
@@ -771,10 +801,14 @@ export const type_guards = {
     return (entity as Quad).termType == 'Quad'   
   },
   
-  isLiteral(entity: NamedNode | BlankNode | Quad | Variable | Literal): entity is Literal{
+  isLiteral(entity: NamedNode | BlankNode | Quad | Variable | Literal): entity is Literal{ 
     return (entity as Literal).termType == 'Literal'   
   }
 
+  // isThatLiterals(entity: NamedNode | BlankNode | Quad | Variable | Literal | Array<Literal>): entity is Literal|Literal[]{ 
+  //   if (something instanceof Array)
+  //     return (something as Literal).termType == 'Literal'   
+  // }
 }
 
 /**
@@ -921,9 +955,11 @@ export class PropertyValueIdentifier implements SubjectId {
           else {
             return false
           } 
-        } 
+        }
+        else if (type_guards.isSubjectValue(pvi.value))
+          return false
         else {
-          return this.value == pvi.value
+          return this.value.value == pvi.value.value
         }
       }
       else {
@@ -949,7 +985,7 @@ export class PropertyValueIdentifier implements SubjectId {
      * @returns 
      * TODO the value could be a meta subject which should be serialized as such as well
      */
-    const makeQuad = (subject : SubjectId, property: string, value: Subject|LiteralValue) => {
+    const makeQuad = (subject : SubjectId, property: string, value: Subject|Literal) => {
       
       let subjectInQuad : Quad|NamedNode
       let propertyInQuad : NamedNode 
@@ -966,8 +1002,8 @@ export class PropertyValueIdentifier implements SubjectId {
         throw new Error(`${subject} is an unsupported type of subject`)
       }
      
-      if (type_guards.isLiteralValue(value)) {
-        objectInQuad = rdfjs.literal(value)
+      if (!type_guards.isSubjectValue(value)) {
+        objectInQuad = value // rdfjs.literal(value)
       } 
       else if (value.id instanceof IRISubjectId) {
         objectInQuad = rdfjs.named(value.id.iri)

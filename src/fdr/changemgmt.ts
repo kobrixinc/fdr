@@ -1,7 +1,6 @@
-import { Quad } from "@rdfjs/types"
-import { Subject, SubjectId } from "./dataspecAPI.js"
+import { Literal, Quad } from "@rdfjs/types"
+import { Subject } from "./dataspecAPI.js"
 import { PropertyValueIdentifier, SubjectImpl } from "./dataspec.js"
-import { LiteralValue } from "./fdr.js"
 
 export class KBChange {
   constructor() { }
@@ -34,9 +33,9 @@ export interface PropertyChange {
 }
 
 export class PropertyAdded implements PropertyChange {
-  constructor(readonly name: string, readonly value: Subject[] | LiteralValue[]) {}
+  constructor(readonly name: string, readonly value: Subject[] | Literal[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
-    return this.value.map((added : LiteralValue|Subject) => {
+    return this.value.map((added : Literal|Subject) => {
       const pvi = new PropertyValueIdentifier(subject.id, this.name, added) 
       const newQuad = pvi.toQuad() 
       return new QuadAdded(newQuad)
@@ -45,9 +44,9 @@ export class PropertyAdded implements PropertyChange {
 }
 
 export class PropertyRemoved implements PropertyChange {
-  constructor(readonly name: string, readonly value: Subject[] | LiteralValue[], readonly annotation?: any[]) {}
+  constructor(readonly name: string, readonly value: Subject[] | Literal[], readonly annotation?: any[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
-    return (this.value as (Subject|LiteralValue)[]).map(added => {
+    return (this.value as (Subject|Literal)[]).map(added => {
       const quad = new PropertyValueIdentifier(subject.id, this.name, added).toQuad()
       return new QuadRemoved(quad)
     })
@@ -62,8 +61,8 @@ export class PropertyRemoved implements PropertyChange {
  */
 export class PropertyReplaced implements PropertyChange {
   constructor(readonly name: string, 
-              readonly oldvalue: Subject[] | LiteralValue[],
-              readonly newvalue: Subject[]  | LiteralValue[],
+              readonly oldvalue: Subject[] | Literal[],
+              readonly newvalue: Subject[]  | Literal[],
               readonly annotation?: any[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
     const result = [] as QuadChange[]
@@ -97,15 +96,12 @@ export class PropertyReplaced implements PropertyChange {
         const quad = new PropertyValueIdentifier(subject.id, this.name, oneOldValue).toQuad()
         result.push(new QuadRemoved(quad))
       }
-    }   
+    }
    
     for (const i in this.newvalue)
     {
       if (!preexistingValues[i]) {
-        //the value is not preexisting, so add it
-        const oneNewValue = this.newvalue[i] as (Subject|LiteralValue)
-        
-        const quad = new PropertyValueIdentifier(subject.id, this.name, oneNewValue).toQuad()
+        const quad = new PropertyValueIdentifier(subject.id, this.name, this.newvalue[i]).toQuad()
         const change = new QuadAdded(quad)
         result.push(change)
       }

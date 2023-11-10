@@ -1,3 +1,4 @@
+import { Literal } from "@rdfjs/types"
 import { PropertyChange } from "./changemgmt.js"
 import { LiteralValue } from "./fdr.js"
 
@@ -113,7 +114,7 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
   ingest(result : any)
 }
 
-export type PropertyValue = LiteralValue | Subject
+export type PropertyValue = Literal | Subject
 
 
 /**
@@ -244,7 +245,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param propertyName The property name.
    * @param value The property value - a literal or another subject.
    */
-  propertyAsSubject(propertyName: string, value: LiteralValue|Subject): Subject
+  propertyAsSubject(propertyName: string, value: Literal|Subject): Subject
 
 }
 

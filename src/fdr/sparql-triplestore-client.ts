@@ -75,7 +75,7 @@ export class SPARQLProtocolClient implements TripleStore, SPARQLEndpoint {
   client: SparqlClient
   graphs: Set<NamedNode>
   propertyFilter: ((n:NamedNode) => Boolean) = (n) => true
-  valueFilter: ((l:Term) => Boolean) = (l) => !l['language'] || l['language'] == 'en'
+  valueFilter: ((l:Term) => Boolean) = (l) => true //  !l['language'] || l['language'] == 'en'
   
   private n3_format(value: Term): string {
     let n3 = this.n3_format.bind(this)
@@ -104,7 +104,7 @@ export class SPARQLProtocolClient implements TripleStore, SPARQLEndpoint {
     if (x['type'] == 'uri')
       return rdfjs.named(x['value'])
     else // if (x['type'] == 'literal')
-      return rdfjs.literal(x['value'])
+      return rdfjs.literal(x['value'], x['xml:lang'])
   }
 
   constructor(readonly endpointUrl: string, 
@@ -217,55 +217,11 @@ export class SPARQLProtocolClient implements TripleStore, SPARQLEndpoint {
           quads.push(rdfjs.quad(subject, prop, value))
       }
     })
-    // return datasetFactory.dataset(quads)
     return rdf.dataset(quads)
   }
-
-  // async fetch_old(subject: NamedNode<string>): Promise<[Dataset<Quad>, object]> {
-  //   let self = this
-  //   let fromGraphs = ''
-  //   if (this.graphs.size > 0) {      
-  //     this.graphs.forEach(g => fromGraphs += ` FROM <${g.value}>\n` )
-  //   }
-  //   let data = await this.client.select(` 
-  //     SELECT ?prop ?value ${fromGraphs} WHERE {
-  //       <${subject.value}> ?prop ?value
-  //     }`
-  //   )
-  //   const quads: Array<Quad> = []
-  //   data.forEach( row => {
-  //     let prop = row['prop']
-  //     let value = row['value']
-  //     if (self.propertyFilter.call(self, prop) &&
-  //         self.valueFilter.call(self, value)) {
-  //         quads.push(rdfjs.quad(subject, prop, value))
-  //     }
-  //   })
-  //   return [datasetFactory.dataset(quads), {}]
-  // }
   
   sparqlSelect(query: { queryString: string }): Promise<Array<object>> {
-    // let self = this
     return this.client.select(query.queryString)
-    // const quads: Array<Quad> = []
-    // data.forEach( row => {      
-    //   let subject = this.jsonToTerm(row['subject']) as NamedNode
-    //   let prop = this.jsonToTerm(row['property']) as NamedNode
-    //   let value = this.jsonToTerm(row['value'])
-    //   if (row.hasOwnProperty("metaproperty")) {
-    //     quads.push(rdfjs.metaQuad(rdfjs.quad(subject, prop, value), 
-    //                this.jsonToTerm(row["metaproperty"]) as NamedNode,
-    //                this.jsonToTerm(row["metavalue"])))
-    //   }
-    //   else if (self.propertyFilter.call(self, prop) &&
-    //       self.valueFilter.call(self, value)) {
-    //       quads.push(rdfjs.quad(subject, prop, value))
-    //   }
-    // })
-    // // return datasetFactory.dataset(quads)
-    // return rdf.dataset(quads)
-
-    // throw new Error('Method not implemented.')
   }
 
   async modify(changes: KBChange[]): Promise<{ok:boolean, error?:string}> {

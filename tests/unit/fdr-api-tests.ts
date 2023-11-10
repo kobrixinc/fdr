@@ -21,7 +21,7 @@ describe("FDR API Tests", function() {
     let subject = graph.factory.subject(fdr.subjectId("dbr:Miami"))
     subject = await graph.use(subject)
 
-    let abstract = subject.get("dbo:abstract")
+    let abstract = subject.get("dbo:abstract", "ca")
 
     console.log(abstract)
 

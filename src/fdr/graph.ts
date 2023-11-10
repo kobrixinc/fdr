@@ -4,7 +4,7 @@ import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./da
 import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
 import { NameResolver, resolvers } from "./naming.js"
 import { TripleStore } from "./triplestore-client.js"
-import { rdfjs } from "./fdr.js"
+import { FDR, rdfjs } from "./fdr.js"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.
@@ -12,6 +12,11 @@ import { rdfjs } from "./fdr.js"
  */
 export interface Graph {
 
+  /**
+   * Reference to the FDR environment which created this graph.
+   */
+  env: FDR 
+  
   factory: DataSpecFactory
 
   /**
@@ -35,9 +40,7 @@ export interface Graph {
    */
   close(desc: DataSpec<any>): void  
 
-  id : string
-
-  
+  id : string  
 } 
 
 /**
@@ -92,20 +95,9 @@ export class LocalGraph implements Graph {
       return res 
     
     }
-    
-
-    // subject(id: string): SubjectImpl {
-    //   id = this.graph.nameResolver.resolve(id)
-    //   let s = this.graph.cache.subjects[id]
-    //   if (!s) {
-    //     s = new SubjectImpl(id, this.graph)
-    //     this.graph.cache.subjects[id] = s
-    //   }
-    //   return s
-    // }
   }
 
-  constructor(client: TripleStore, id : string, label : string = id) {
+  constructor(readonly env:FDR, client: TripleStore, id : string, label : string = id) {
     this.client = client
     this.factory = new LocalGraph.factory_impl(this)
     this.nameResolver = resolvers.default()

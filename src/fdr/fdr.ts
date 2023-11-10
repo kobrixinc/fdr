@@ -9,9 +9,27 @@ import { TripleStore } from "./triplestore-client.js"
 
 const mf = modelFactory as DataFactory
 
+/**
+ * Configuration of the FDR environment, providing defaults across
+ * all open graphs and objects.
+ */
+export interface FDRConfig {
+  /**
+   * The default language to use when returning literal values. This is initially
+   * undefined which means that a random literal will be return in case of a multi-lingual
+   * graph. The set it to a specific value do `fdr.config.lang="en"`.
+   * 
+   * Note that this affects only retrieval of literal values, not storage. That is, if a
+   * new property is being added to an entity, one has to explicitly set the language of the literal
+   * if one wants it to be stored in the triplestore.
+   */
+  lang: string | undefined 
+}
+
 export interface FDR {
   subjectId(name: string): SubjectId
   graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph
+  config: FDRConfig
 }
 
 function DefaultFDR<TBase extends new (...args: any[]) => WithResolver>(Base: TBase) {
@@ -20,10 +38,14 @@ function DefaultFDR<TBase extends new (...args: any[]) => WithResolver>(Base: TB
       return new IRISubjectId(this.resolver.resolve(name))
     }  
     graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph {
-      let localgraph = new LocalGraph(graphSpecification.store, "", "")
+      let localgraph = new LocalGraph(this, graphSpecification.store, "", "")
       localgraph.nameResolver = this.resolver
       return localgraph
     }  
+
+    readonly config: FDRConfig  = {
+      lang: undefined
+    }
   }
 }
 
@@ -45,7 +67,7 @@ export class fdrmake {
 
 export interface RDFJS {
   named(iri: string): NamedNode
-  literal(value: string | number | boolean): Literal
+  literal(value: string | number | boolean, lang?: string): Literal
   quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph): Quad
   metaQuad(x: Quad, y: NamedNode, z: Quad|NamedNode|Literal, g?: Quad_Graph): Quad
 }
@@ -55,8 +77,8 @@ function DefaultRDFJS<TBase extends new (...args: any[]) => WithResolver>(Base: 
     named(iri: string) { 
       return mf.namedNode(this.resolver.resolve(iri))
     }  
-    literal(value: string | number | boolean) { 
-      return mf.literal(value.toString()) 
+    literal(value: string | number | boolean, lang?: string) { 
+      return mf.literal(value.toString(), lang) 
     }
   
     quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph) { 
@@ -76,8 +98,8 @@ export class rdfjs {
   static named(iri: string) 
     { return rdfjs.maker.named(iri) }
 
-  static literal(value: string | number | boolean) 
-    { return rdfjs.maker.literal(value) }
+  static literal(value: string | number | boolean, lang?: string) 
+    { return rdfjs.maker.literal(value, lang) }
 
   static quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph) 
     { return rdfjs.maker.quad(x, y, z, g) }
