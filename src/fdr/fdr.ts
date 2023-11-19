@@ -1,10 +1,9 @@
 import { DataFactory, Literal, Quad_Graph, Quad_Object } from "@rdfjs/types"
 import modelFactory  from "@rdfjs/data-model"
 import { NamedNode, Quad, Term } from "@rdfjs/types"
-import { DefaultNameResolver, NameResolver, ResolverHolder, WithResolver, resolvers } from "./naming.js"
+import { ResolverHolder, WithResolver } from "./naming.js"
 import { IRISubjectId, SubjectId } from "./dataspecAPI.js"
 import { Graph, LocalGraph } from "./graph.js"
-import SPARQLProtocolClient from "./sparql-triplestore-client.js"
 import { TripleStore } from "./triplestore-client.js"
 
 const mf = modelFactory as DataFactory
@@ -120,5 +119,5 @@ class BaseGraphEnvFacade extends ResolverHolder {
   // resolver: DefaultNameResolver = resolvers.default()
 }
 
-export const GraphEnvFacade = DefaultFDR(DefaultRDFJS(BaseGraphEnvFacade))
-export const fdr = new GraphEnvFacade()
+const GraphEnvFacade = DefaultFDR(DefaultRDFJS(BaseGraphEnvFacade))
+export const fdr: RDFJS & FDR & ResolverHolder = new GraphEnvFacade()
