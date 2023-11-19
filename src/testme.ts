@@ -1,6 +1,6 @@
 import { DatasetCore, Literal, NamedNode, Quad, Quad_Object } from "@rdfjs/types"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "./fdr/changemgmt.js"
-import { make } from "./fdr/fdr.js"
+import { rdfjs } from "./fdr/fdr.js"
 import SPARQLProtocolClient from "./fdr/sparql-triplestore-client.js"
 
 function setupEndpoint(): SPARQLProtocolClient {
@@ -41,8 +41,8 @@ function assert(yesorno, msg) {
 console.log('Hello Test!')
 
 let endpoint = setupEndpoint()
-let film = make.named("https://swapi.co/resource/film/5")
-let boxofficeProp = make.named('https://swapi.co/vocabulary/boxOffice')
+let film = rdfjs.named("https://swapi.co/resource/film/5")
+let boxofficeProp = rdfjs.named('https://swapi.co/vocabulary/boxOffice')
 let confidences = {}
 let annotatedTriples: Array<Quad> = []
 
@@ -51,10 +51,10 @@ let annotatedTriples: Array<Quad> = []
 let changes: Array<KBChange> = 
   valuesOf(boxofficeProp, (await endpoint.fetch(film))).map(val => {
     confidences[val.value] = Math.random()
-    let triple = make.quad(film, boxofficeProp, val)
-    let quad = make.metaQuad(triple,
-            make.named("rdfs:label"), 
-            make.literal(confidences[val.value]),
+    let triple = rdfjs.quad(film, boxofficeProp, val)
+    let quad = rdfjs.metaQuad(triple,
+            rdfjs.named("rdfs:label"), 
+            rdfjs.literal(confidences[val.value]),
             triple.graph)
     annotatedTriples.push(triple)
     return new QuadAdded(quad)
@@ -67,7 +67,7 @@ let result = await endpoint.modify(changes)
 let storedAnnotations = await endpoint. fetch(...annotatedTriples)
 let errors: Array<string> = []
 changes = annotatedTriples.map(triple => {
-  let A = storedAnnotations.match(triple, make.named("rdfs:label"))
+  let A = storedAnnotations.match(triple, rdfjs.named("rdfs:label"))
   if (A.size == 0) {
     errors.push("No annotations stored for triple " + triple)
     return new NoChange()
@@ -79,7 +79,7 @@ changes = annotatedTriples.map(triple => {
     if (confidences[(triple.object as Literal).value] != confidence.value)
       errors.push("Confidence value for " + triple.subject.value + " : " + triple.object.value + 
             " is the unexpected " + confidence.value)
-    return new QuadRemoved(make.metaQuad(triple, make.named("rdfs:label"), confidence, triple.graph))
+    return new QuadRemoved(rdfjs.metaQuad(triple, rdfjs.named("rdfs:label"), confidence, triple.graph))
   }
 })
 

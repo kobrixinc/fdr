@@ -1,4 +1,4 @@
-import { Quad } from "@rdfjs/types"
+import { Literal } from "@rdfjs/types"
 import { PropertyChange } from "./changemgmt.js"
 import { LiteralValue } from "./fdr.js"
 
@@ -114,7 +114,7 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
   ingest(result : any)
 }
 
-export type PropertyValue = LiteralValue | Subject
+export type PropertyValue = Literal | Subject
 
 
 /**
@@ -124,18 +124,18 @@ export type PropertyValue = LiteralValue | Subject
  * 
  */
 export interface SubjectId {
-  toString()
-  equals(other : SubjectId)
+  toString(): string
+  equals(other : SubjectId): boolean
 } 
 
 export class IRISubjectId implements SubjectId {
   
   constructor(readonly iri: string){}
 
-  toString() {
+  toString(): string {
     return this.iri
   }
-  equals(other: SubjectId) {
+  equals(other: SubjectId): boolean {
     return (other as IRISubjectId).iri == this.iri
   }
 
@@ -174,7 +174,7 @@ export interface Subject extends DataSpec<Subject> {
    * retrieve only the first one
    * @param prop 
    */
-  get(prop: string): Subject | LiteralValue | null 
+  get(prop: string, lang?: string): Subject | LiteralValue | null 
   
   /**
    * Get all the values of a specific property 
@@ -245,7 +245,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param propertyName The property name.
    * @param value The property value - a literal or another subject.
    */
-  propertyAsSubject(propertyName: string, value: LiteralValue|Subject): Subject
+  propertyAsSubject(propertyName: string, value: Literal|Subject): Subject
 
 }
 

@@ -1,7 +1,6 @@
-import { Quad } from "@rdfjs/types"
-import { Subject, SubjectId } from "./dataspecAPI.js"
+import { Literal, Quad } from "@rdfjs/types"
+import { Subject } from "./dataspecAPI.js"
 import { PropertyValueIdentifier, SubjectImpl } from "./dataspec.js"
-import { make, LiteralValue } from "./fdr.js"
 
 export class KBChange {
   constructor() { }
@@ -18,9 +17,8 @@ export class NoChange extends KBChange {
 }
 
 export class QuadAdded extends QuadChange {
-  constructor(readonly quad: Quad, readonly annotation? : object) { 
+  constructor(readonly quad: Quad) { 
     super(quad)
-    this.annotation = annotation
   }
 }
 
@@ -35,27 +33,23 @@ export interface PropertyChange {
 }
 
 export class PropertyAdded implements PropertyChange {
-  constructor(readonly name: string, readonly value: Subject[] | LiteralValue[], readonly annotation?: any[]) {}
+  constructor(readonly name: string, readonly value: Subject[] | Literal[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
-    return (this.value as (Subject|LiteralValue)[]).map(added => {
+    return this.value.map((added : Literal|Subject) => {
       const pvi = new PropertyValueIdentifier(subject.id, this.name, added) 
       const newQuad = pvi.toQuad() 
-      return new QuadAdded(newQuad, this.annotation)
+      return new QuadAdded(newQuad)
     }) 
   }
 }
 
 export class PropertyRemoved implements PropertyChange {
-  constructor(readonly name: string, readonly value: Subject[] | LiteralValue[], readonly annotation?: any[]) {}
+  constructor(readonly name: string, readonly value: Subject[] | Literal[], readonly annotation?: any[]) {}
   toQuadChanges(subject: Subject): Array<QuadChange> {
-    return (this.value as (Subject|LiteralValue)[]).map(added => 
-      new QuadRemoved(make.quad(
-        make.named(subject.id.toString()), 
-        make.named(this.name),
-        added instanceof SubjectImpl ? 
-          make.named(added.id) : 
-          make.literal(added)
-      )))
+    return (this.value as (Subject|Literal)[]).map(added => {
+      const quad = new PropertyValueIdentifier(subject.id, this.name, added).toQuad()
+      return new QuadRemoved(quad)
+    })
   }
 }
 
@@ -67,34 +61,50 @@ export class PropertyRemoved implements PropertyChange {
  */
 export class PropertyReplaced implements PropertyChange {
   constructor(readonly name: string, 
-              readonly oldvalue: Subject[] | LiteralValue[],
-              readonly newvalue: Subject[]  | LiteralValue[],
+              readonly oldvalue: Subject[] | Literal[],
+              readonly newvalue: Subject[]  | Literal[],
               readonly annotation?: any[]) {}
-  debugger
   toQuadChanges(subject: Subject): Array<QuadChange> {
     const result = [] as QuadChange[]
+
+    //a bitmap marking whether a new value was present before the change
+    const preexistingValues = this.newvalue.map(() => false)
     
+    /*
+     * Delete the old values which are not getting reinserted 
+     */
     for (const oneOldValue of this.oldvalue) {
-      result.push(new QuadRemoved(make.quad(
-        make.named(subject.id.toString()), 
-        make.named(this.name),
-        oneOldValue instanceof SubjectImpl ? 
-          make.named(oneOldValue.id) : 
-          make.literal(oneOldValue)
-      )))
-    }   
+    
+      const indexInNewValues = this.newvalue.findIndex(oneNewValue => {
+        if (oneOldValue instanceof SubjectImpl) {
+          if (oneOldValue.id == (oneNewValue as Subject).id) return true
+        }
+        else {
+          return oneNewValue == oneOldValue
+        }
+      })
+      
+      /*
+      if the value is to be reinserted, do not delete it, just mark it 
+      as present
+      */
+      if (indexInNewValues >= 0) {
+        //mark as preexisting, so the value will not be reinserted 
+        preexistingValues[indexInNewValues] = true
+      }
+      else {
+        const quad = new PropertyValueIdentifier(subject.id, this.name, oneOldValue).toQuad()
+        result.push(new QuadRemoved(quad))
+      }
+    }
    
     for (const i in this.newvalue)
     {
-      const oneNewValue = this.newvalue[i] as (Subject|LiteralValue)
-      const change = new QuadAdded(make.quad(
-        make.named(subject.id.toString()), 
-        make.named(this.name),
-        oneNewValue instanceof SubjectImpl ? 
-          make.named(oneNewValue.id) : 
-          make.literal(oneNewValue)
-      ), this.annotation && this.annotation[i])
-      result.push(change)
+      if (!preexistingValues[i]) {
+        const quad = new PropertyValueIdentifier(subject.id, this.name, this.newvalue[i]).toQuad()
+        const change = new QuadAdded(quad)
+        result.push(change)
+      }
     }
             
     return result

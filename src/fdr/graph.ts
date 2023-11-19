@@ -3,7 +3,8 @@ import { QuadChange } from "./changemgmt.js"
 import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
 import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
 import { NameResolver, resolvers } from "./naming.js"
-import { TripleStoreClient } from "./triplestore-client.js"
+import { TripleStore } from "./triplestore-client.js"
+import { FDR, rdfjs } from "./fdr.js"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.
@@ -11,6 +12,11 @@ import { TripleStoreClient } from "./triplestore-client.js"
  */
 export interface Graph {
 
+  /**
+   * Reference to the FDR environment which created this graph.
+   */
+  env: FDR 
+  
   factory: DataSpecFactory
 
   /**
@@ -34,9 +40,7 @@ export interface Graph {
    */
   close(desc: DataSpec<any>): void  
 
-  id : string
-
-  
+  id : string  
 } 
 
 /**
@@ -45,11 +49,12 @@ export interface Graph {
 export class LocalGraph implements Graph { 
 
   public id : string
-  readonly nameResolver: NameResolver
+  public label : string
+  public nameResolver: NameResolver
   readonly factory: DataSpecFactory
-  client: TripleStoreClient
+  client: TripleStore
   private cache = { 
-    subjects: {}
+    subjects: new Map<SubjectId, SubjectImpl>()
   } 
   private _reactivityDecorator : <T extends Subject>(T) => T = (x) => x
 
@@ -72,26 +77,32 @@ export class LocalGraph implements Graph {
         }
         throw new Error(`Subject id ${id} is unsupported`)
       }
-
-      return new SubjectImpl(resolve(id), this.graph)
+      const resolved = resolve(id)
+      /*
+      TODO 
+      we need a better (O(1)) retrieval of existing subjects
+      from the map; the key is not a primitive value, so subjects.get()
+      does not work 
+      */
+      for (const entry of this.graph.cache.subjects.entries()) {
+        if (entry[0].equals(resolved)) {
+          return entry[1] 
+        }
+        this.graph.cache.subjects.get(resolved)
+      }
+      const res = new SubjectImpl(resolve(id), this.graph)
+      this.graph.cache.subjects.set(resolved, res)
+      return res 
+    
     }
-
-    // subject(id: string): SubjectImpl {
-    //   id = this.graph.nameResolver.resolve(id)
-    //   let s = this.graph.cache.subjects[id]
-    //   if (!s) {
-    //     s = new SubjectImpl(id, this.graph)
-    //     this.graph.cache.subjects[id] = s
-    //   }
-    //   return s
-    // }
   }
 
-  constructor(client: TripleStoreClient, id : string) {
+  constructor(readonly env:FDR, client: TripleStore, id : string, label : string = id) {
     this.client = client
     this.factory = new LocalGraph.factory_impl(this)
     this.nameResolver = resolvers.default()
     this.id = id
+    this.label = label
   }
 
   /**
@@ -117,7 +128,7 @@ export class LocalGraph implements Graph {
   
   clear() {
     this.cache = { 
-      subjects: {}
+      subjects: new Map<SubjectId, SubjectImpl>() 
     }
   }
 
@@ -127,7 +138,7 @@ export class LocalGraph implements Graph {
    * This callback should modify any internal Graph state so that its state is consistent
    * with the changes made to the Subject
    * @param subject 
-   * @param key 
+   * @param key /
    */
   subjectPropertyChangeCallback(
     subject: Subject, 
@@ -151,7 +162,22 @@ export class LocalGraph implements Graph {
     if (!type_guards.isRemoteDataSpec(desc))
       throw new Error(`${desc} is expected to be a RemoteDataSpec`)
     if (!desc.ready) {
-      const data = await this.client.query(desc) 
+      let data
+      if (type_guards.isSubjectValue(desc)) {
+        const id = (desc as Subject).id 
+        if (id instanceof PropertyValueIdentifier) {
+          data = await this.client.fetch(id.toQuad()) 
+        }
+        else if (id instanceof IRISubjectId){
+          data = await this.client.fetch(rdfjs.named(id.iri)) 
+        }
+        else {
+          throw new Error(`${id} is neither IRI, nor property value identifier`)
+        }
+      }
+      else {
+        throw new Error(`Fetching non subject dataspecs is not supported`)
+      }
       if (data != null) {
         desc.ingest(data)
       }
