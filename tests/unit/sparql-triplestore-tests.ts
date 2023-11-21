@@ -36,7 +36,7 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
 }
 
   it('Fetches a subject with properties', async () => {
-    let client = new SparqlClient("http://obelix:7200/repositories/starwars")
+    let client = new SparqlClient("http://localhost:7200/repositories/starwars")
     let result = await client.select("select * where { ?s ?p ?o }")
     console.log('test passed', result)
   })
