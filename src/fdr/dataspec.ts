@@ -2,7 +2,7 @@
 import { BlankNode, Dataset, Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Variable } from "@rdfjs/types"
 import { asArray } from "../utils.js"
 import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { LiteralValue, rdfjs } from "./fdr.js"
+import { LiteralValue, fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
 import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, PropertyValue, IRISubjectId } from "./dataspecAPI.js"
@@ -91,7 +91,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
 
     if (type_guards.isLiteral(res)) {
       if (!lang)
-        lang = this.getGraph().env.config.lang
+        lang = fdr.config.lang
       let langIsOptional = false
       if (lang && lang.endsWith("?")) {
         lang = lang.replace("?", "")

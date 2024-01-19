@@ -37,8 +37,7 @@ function DefaultFDR<TBase extends new (...args: any[]) => WithResolver>(Base: TB
       return new IRISubjectId(this.resolver.resolve(name))
     }  
     graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph {
-      let localgraph = new LocalGraph(this, graphSpecification.store, "", "")
-      localgraph.nameResolver = this.resolver
+      let localgraph = new LocalGraph(graphSpecification.store, "", "")
       return localgraph
     }  
 

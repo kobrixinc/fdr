@@ -2,9 +2,9 @@
 import { QuadChange } from "./changemgmt.js"
 import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
 import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
-import { NameResolver, resolvers } from "./naming.js"
+import { NameResolver } from "./naming.js"
 import { TripleStore } from "./triplestore-client.js"
-import { FDR, rdfjs } from "./fdr.js"
+import { rdfjs, fdr} from "./fdr.js"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.
@@ -12,11 +12,6 @@ import { FDR, rdfjs } from "./fdr.js"
  */
 export interface Graph {
 
-  /**
-   * Reference to the FDR environment which created this graph.
-   */
-  env: FDR 
-  
   factory: DataSpecFactory
 
   /**
@@ -97,10 +92,21 @@ export class LocalGraph implements Graph {
     }
   }
 
-  constructor(readonly env:FDR, client: TripleStore, id : string, label : string = id) {
+  /*
+
+  TODO consider optional nameResolver parameter.
+    however, since the fdr factory methods use the global resolver, they will be incompatible
+    if the user creates a graph with a different resolver.
+    So -- either use the graph resolver in the factories or always use the global resolver.
+  TODO consider leaving the env:FDR parameter. That would be needed in case we want
+    some mutable state -- e.g. the global lang setting.
+    However there is no public FDR constructor, so the only possible FDR instance is fdr.fdr
+    */
+  constructor(client: TripleStore, id : string, label : string = id /*, nameResolver: NameResolver = fdr.resolver*/) {
     this.client = client
     this.factory = new LocalGraph.factory_impl(this)
-    this.nameResolver = resolvers.default()
+    // this.nameResolver = nameResolver 
+    this.nameResolver = fdr.resolver
     this.id = id
     this.label = label
   }
