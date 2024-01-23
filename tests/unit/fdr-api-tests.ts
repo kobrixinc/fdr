@@ -1,6 +1,7 @@
-import { assert } from "chai"
-import { fdr }  from "../../src/fdr/fdr.js"
+import { assert, expect } from "chai"
+import { fdr, fdrmake }  from "../../src/fdr/fdr.js"
 import SPARQLProtocolClient from "../../src/fdr/sparql-triplestore-client.js"
+import { ResolverHolder } from "src/index.js"
 
 const prefixes: {[key: string]: any}  = {
   "dbr": "http://dbpedia.org/resource/",
@@ -24,6 +25,22 @@ describe("FDR API Tests", function() {
     let abstract = subject.get("dbo:abstract", "ca")
 
     console.log(abstract)
+
+  }).timeout(20000)
+  
+  it("fdr, fdrmake resolution should work together", async () => {
+    
+    fdr.resolver.prefixResolver.withPrefixes(prefixes)
+
+    let fdr_resolved = fdr.resolver.resolve("dbo:abstract")
+    let fdrmake_resolved = fdrmake.maker.resolver.resolve("dbo:abstract")
+    expect(fdr_resolved).to.equals(fdrmake_resolved)
+
+  }).timeout(20000)
+  
+  it("fdr, fdrmake config should work together", async () => {
+    fdr.config.lang = 'bg'
+    expect(fdrmake.maker.config.lang).to.equals('bg')
 
   }).timeout(20000)
 })

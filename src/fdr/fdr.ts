@@ -31,7 +31,7 @@ export interface FDR {
   config: FDRConfig
 }
 
-function DefaultFDR<TBase extends new (...args: any[]) => WithResolver>(Base: TBase) {
+function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: TBase) {
   return class DefaultFDR extends Base implements FDR {
     subjectId(name: string): SubjectId {
       return new IRISubjectId(this.resolver.resolve(name))
@@ -97,8 +97,9 @@ const GraphEnvFacade = DefaultFDR(DefaultRDFJS(BaseGraphEnvFacade))
  * The objects used to interact with the graphs must be created using
  * the factory methods of the environment which holds the graph.
  */
-export type GraphEnvironment = FDR & WithResolver
-export const fdr: GraphEnvironment & RDFJS = new GraphEnvFacade()
+export type GraphEnvironment = FDR & WithResolver 
+
+export const fdr: FDR & RDFJS & ResolverHolder = new GraphEnvFacade()
 
 export class rdfjs {
 
