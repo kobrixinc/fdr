@@ -2,7 +2,7 @@
 import { BlankNode, Dataset, Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Variable } from "@rdfjs/types"
 import { asArray } from "../utils.js"
 import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { LiteralValue, fdr, rdfjs } from "./fdr.js"
+import { LiteralValue, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
 import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, PropertyValue, IRISubjectId } from "./dataspecAPI.js"
@@ -91,7 +91,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
 
     if (type_guards.isLiteral(res)) {
       if (!lang)
-        lang = fdr.config.lang
+        lang = this.getGraph().env.config.lang
       let langIsOptional = false
       if (lang && lang.endsWith("?")) {
         lang = lang.replace("?", "")
@@ -429,7 +429,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   }
     
   protected resolveName(name: string): string {  
-    return this.graph.nameResolver.resolve(name)
+    return this.graph.env.resolver.resolve(name)
   }
   
   /**
@@ -532,7 +532,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     let result = new SubjectLightCopy(
       this, 
       () => this.graph, 
-      (name) => this.graph.nameResolver.resolve(name))
+      (name) => this.graph.env.resolver.resolve(name))
     result = new Proxy<SubjectLightCopy>(result, handler)
     if (reactivityDecorator)
       result = reactivityDecorator(result)
