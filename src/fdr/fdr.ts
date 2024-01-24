@@ -31,14 +31,13 @@ export interface FDR {
   config: FDRConfig
 }
 
-function DefaultFDR<TBase extends new (...args: any[]) => WithResolver>(Base: TBase) {
+function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: TBase) {
   return class DefaultFDR extends Base implements FDR {
     subjectId(name: string): SubjectId {
       return new IRISubjectId(this.resolver.resolve(name))
     }  
     graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph {
       let localgraph = new LocalGraph(this, graphSpecification.store, "", "")
-      localgraph.nameResolver = this.resolver
       return localgraph
     }  
 
@@ -48,21 +47,7 @@ function DefaultFDR<TBase extends new (...args: any[]) => WithResolver>(Base: TB
   }
 }
 
-/**
- * A factory for common FDR objects. 
- */
-export class fdrmake {
 
-  static maker: FDR = new (DefaultFDR(ResolverHolder))
-
-  static subjectId(name: string): SubjectId {
-    return fdrmake.maker.subjectId(name)
-  }
-
-  static graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph {
-    return fdrmake.maker.graph(graphSpecification)
-  }
-}
 
 export interface RDFJS {
   named(iri: string): NamedNode
@@ -90,9 +75,40 @@ function DefaultRDFJS<TBase extends new (...args: any[]) => WithResolver>(Base: 
   }
 }
 
+
+
+export type LiteralValue = number | string | boolean
+
+export type  { NameResolver, DefaultNameResolver } from "./naming.js"
+export type { Subject } from "./dataspecAPI.js"
+export * from "./triplestore-client.js"
+export * from "./graph.js"
+
+class BaseGraphEnvFacade extends ResolverHolder {
+  // resolver: DefaultNameResolver = resolvers.default()
+}
+
+const GraphEnvFacade = DefaultFDR(DefaultRDFJS(BaseGraphEnvFacade))
+/**
+ * An environment which hosts multiple related graphs and contains state 
+ * which should be shared between those graphs e.g. prefixes, default
+ * language. 
+ * 
+ * The objects used to interact with the graphs must be created using
+ * the factory methods of the environment which holds the graph.
+ */
+export type GraphEnvironment = FDR & WithResolver 
+
+export const fdr: FDR & RDFJS & ResolverHolder = new GraphEnvFacade()
+
 export class rdfjs {
 
-  static maker: RDFJS & WithResolver = new (DefaultRDFJS(ResolverHolder))
+  /*
+    In this simplest case when we are using a global GraphEnvironment (namely
+    the fdr object), we reuse that for the maker instead of creating a
+    fresh object, since we need to reuse the same resolver (and other environment config if needed)
+  */
+  static maker: RDFJS & WithResolver = fdr
 
   static named(iri: string) 
     { return rdfjs.maker.named(iri) }
@@ -108,16 +124,24 @@ export class rdfjs {
     { return rdfjs.maker.metaQuad(x, y, z, g) }
 }
 
-export type LiteralValue = number | string | boolean
 
-export type  { NameResolver, DefaultNameResolver } from "./naming.js"
-export type { Subject } from "./dataspecAPI.js"
-export * from "./triplestore-client.js"
-export * from "./graph.js"
+/**
+ * A factory for common FDR objects. 
+ */
+export class fdrmake {
 
-class BaseGraphEnvFacade extends ResolverHolder {
-  // resolver: DefaultNameResolver = resolvers.default()
+  /*
+    In this simplest case when we are using a global GraphEnvironment (namely
+    the fdr object), we reuse that for the maker instead of creating a
+    fresh object, since we need to reuse the same resolver (and other environment config if needed)
+  */
+  static maker = fdr
+
+  static subjectId(name: string): SubjectId {
+    return fdrmake.maker.subjectId(name)
+  }
+
+  static graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph {
+    return fdrmake.maker.graph(graphSpecification)
+  }
 }
-
-const GraphEnvFacade = DefaultFDR(DefaultRDFJS(BaseGraphEnvFacade))
-export const fdr: RDFJS & FDR & ResolverHolder = new GraphEnvFacade()

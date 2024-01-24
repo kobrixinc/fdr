@@ -429,7 +429,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   }
     
   protected resolveName(name: string): string {  
-    return this.graph.nameResolver.resolve(name)
+    return this.graph.env.resolver.resolve(name)
   }
   
   /**
@@ -532,7 +532,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     let result = new SubjectLightCopy(
       this, 
       () => this.graph, 
-      (name) => this.graph.nameResolver.resolve(name))
+      (name) => this.graph.env.resolver.resolve(name))
     result = new Proxy<SubjectLightCopy>(result, handler)
     if (reactivityDecorator)
       result = reactivityDecorator(result)

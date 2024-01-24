@@ -2,9 +2,8 @@
 import { QuadChange } from "./changemgmt.js"
 import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
 import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
-import { NameResolver, resolvers } from "./naming.js"
 import { TripleStore } from "./triplestore-client.js"
-import { FDR, rdfjs } from "./fdr.js"
+import { rdfjs, GraphEnvironment } from "./fdr.js"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.
@@ -15,7 +14,7 @@ export interface Graph {
   /**
    * Reference to the FDR environment which created this graph.
    */
-  env: FDR 
+  env: GraphEnvironment 
   
   factory: DataSpecFactory
 
@@ -50,7 +49,6 @@ export class LocalGraph implements Graph {
 
   public id : string
   public label : string
-  public nameResolver: NameResolver
   readonly factory: DataSpecFactory
   client: TripleStore
   private cache = { 
@@ -63,7 +61,7 @@ export class LocalGraph implements Graph {
     constructor(readonly graph: LocalGraph) { }
 
     subject(id: SubjectId): SubjectImpl {
-      const resolver = this.graph.nameResolver
+      const resolver = this.graph.env.resolver
       
       function resolve(id : SubjectId) : SubjectId {
         if (id  instanceof PropertyValueIdentifier) {
@@ -97,10 +95,18 @@ export class LocalGraph implements Graph {
     }
   }
 
-  constructor(readonly env:FDR, client: TripleStore, id : string, label : string = id) {
+  //TODO consider this as public graph creation factory to discourage direct calls to the constructor
+  // static _make(env:GraphEnvironment, client: TripleStore, id : string, label : string = id)
+  // {
+  //   return new LocalGraph(env, client, id, label)
+  // }
+
+  /**
+   * This constructor is internal and should not be used directly
+   */
+  constructor(readonly env:GraphEnvironment, client: TripleStore, id : string, label : string = id) {
     this.client = client
     this.factory = new LocalGraph.factory_impl(this)
-    this.nameResolver = resolvers.default()
     this.id = id
     this.label = label
   }
