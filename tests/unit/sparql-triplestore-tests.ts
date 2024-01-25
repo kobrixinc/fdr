@@ -6,8 +6,7 @@ import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "../../sr
 
 describe("SPARQL Protocol Implementation Tests", function() {
 
-  function setupEndpoint(): SPARQLProtocolClient {
-    const endpointUrl = 'http://localhost:7200/repositories/starwars'
+  function setupEndpoint(): SPARQLProtocolClient {    const endpointUrl = 'http://localhost:7200/repositories/starwars'
     let client = new SPARQLProtocolClient(endpointUrl, endpointUrl + "/statements")
     return client
   }
@@ -48,7 +47,16 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
     let boxoffice = data.match(null, rdfjs.named('https://swapi.co/vocabulary/boxOffice'), null, null)
     assert(boxoffice.size > 0, "Could not find voc:boxOffice property")
   })
-  
+
+  it('test literal values', () => {
+    let a = rdfjs.literal("Petar")
+    let b = rdfjs.literal(30)
+    let c = rdfjs.literal(30.123)
+    console.log(a)
+    console.log(b)
+    console.log(c)
+  })   
+
   it('Update the value of boxoffice', async () => {
     let endpoint = setupEndpoint()
     let film = rdfjs.named("https://swapi.co/resource/film/5")
@@ -57,7 +65,9 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
       valuesOf(boxofficeProp, (await endpoint.fetch(film))).map(val =>
       new QuadRemoved(rdfjs.quad(film, boxofficeProp, val)))
 
-    let newboxoffice = "" + Math.random()*1000000
+    console.log(`remove changes  ${changes}`  )
+
+    let newboxoffice =  Math.random()*1000000
     changes.push(new QuadAdded(rdfjs.quad(film, boxofficeProp, rdfjs.literal(newboxoffice))))
 
     let result = await endpoint.modify(changes)
@@ -66,7 +76,7 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
     let newvalues = valuesOf(boxofficeProp, (await endpoint.fetch(film))).map(el => el.value)
     console.log('new values of box office', newvalues)
     assert(newvalues.length == 1, "Expecting a single box office property value.")
-    assert(newvalues[0] == newboxoffice, "Expecting a box office value to be new " + newboxoffice)
+    assert(newvalues[0] == ""+newboxoffice, "Expecting a box office value to be new " + newboxoffice)
   })  
 
   it('Can store and fetch annotations', async () => {

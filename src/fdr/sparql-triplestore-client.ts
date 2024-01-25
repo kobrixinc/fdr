@@ -103,11 +103,14 @@ export class SPARQLProtocolClient implements TripleStore, SPARQLEndpoint {
   jsonToTerm(x: object): Literal|NamedNode{
     if (x['type'] == 'uri')
       return rdfjs.named(x['value'])
-    else // if (x['type'] == 'literal')
-      return rdfjs.literal(x['value'], x['xml:lang'])
+    else {
+      return rdfjs.literal(
+        x['value'], 
+        (x['datatype'] && x['datatype']) ? rdfjs.named(x['datatype']) : x['xml:lang'])
+    } // if (x['type'] == 'literal')
   }
 
-  constructor(readonly endpointUrl: string, 
+constructor(readonly endpointUrl: string, 
               readonly updateUrl: string = endpointUrl) {
     this.client = new SparqlClient(
       endpointUrl,

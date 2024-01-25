@@ -51,7 +51,7 @@ function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: 
 
 export interface RDFJS {
   named(iri: string): NamedNode
-  literal(value: string | number | boolean, lang?: string): Literal
+  literal(value: string | number | boolean, lang?: string, type?: string): Literal
   quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph): Quad
   metaQuad(x: Quad, y: NamedNode, z: Quad|NamedNode|Literal, g?: Quad_Graph): Quad
 }
@@ -61,8 +61,31 @@ function DefaultRDFJS<TBase extends new (...args: any[]) => WithResolver>(Base: 
     named(iri: string) { 
       return mf.namedNode(this.resolver.resolve(iri))
     }  
-    literal(value: string | number | boolean, lang?: string) { 
-      return mf.literal(value.toString(), lang) 
+    literal(value: string | number | boolean, lang?: string, type?: string) { 
+      if (lang) {
+        return mf.literal(value.toString(), lang) 
+      }
+      if (type) {
+        return mf.literal(value.toString(), mf.namedNode(type)) 
+      }
+
+      switch (typeof value) {
+        case 'string': {
+          return mf.literal(value, lang) 
+        }
+        case 'number': {
+          if (Number.isInteger(value))
+            return mf.literal(Math.floor(value).toString(), mf.namedNode('http://www.w3.org/2001/XMLSchema#integer')) 
+
+          return mf.literal(value.toString(), mf.namedNode('http://www.w3.org/2001/XMLSchema#decimal')) 
+        }
+        case 'boolean': {
+          return mf.literal(value.toString(), mf.namedNode('http://www.w3.org/2001/XMLSchema#boolean')) 
+        }
+      
+        default:
+          throw new Error(`${value} is of illegal type ${typeof value}`)
+      }
     }
   
     quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph) { 
