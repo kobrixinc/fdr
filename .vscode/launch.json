@@ -4,6 +4,7 @@
   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
   "configurations": [
+
     {
       "name": "Debug Test",
       "request": "launch",
@@ -44,7 +45,7 @@
       "type": "node"
     },
     {
-      "name": "Launch via NPM",
+      "name": "debug all tests",
       "request": "launch",
       "runtimeArgs": [
         "run",

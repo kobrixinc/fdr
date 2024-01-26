@@ -179,8 +179,9 @@ export interface Subject extends DataSpec<Subject> {
   /**
    * Get all the values of a specific property 
    * @param prop 
+   * @param lang 
    */
-  getAll(prop: string): Subject[] | LiteralValue[] 
+  getAll(prop: string, lang?: string): Subject[] | LiteralValue[] 
 
   /**
    * Set the value of a property; If the previous value of the property was annotated, this will remove the annotation

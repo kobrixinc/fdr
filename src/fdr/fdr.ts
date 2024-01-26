@@ -136,8 +136,20 @@ export class rdfjs {
   static named(iri: string) 
     { return rdfjs.maker.named(iri) }
 
-  static literal(value: string | number | boolean, lang?: string) 
-    { return rdfjs.maker.literal(value, lang) }
+  static literal(value: string | number | boolean, lang?: string) { 
+    let type
+    debugger
+    if (typeof value == "number") {
+      if (Number.isInteger(value))
+        type = "http://www.w3.org/2001/XMLSchema#int" 
+      else
+        type = "http://www.w3.org/2001/XMLSchema#decimal" 
+    }
+    else if (typeof value == "boolean") 
+        type = "http://www.w3.org/2001/XMLSchema#boolean" 
+
+    return rdfjs.maker.literal(value, lang, type) 
+  }
 
   static quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph) 
     { return rdfjs.maker.quad(x, y, z, g) }

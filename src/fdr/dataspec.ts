@@ -2,7 +2,7 @@
 import { BlankNode, Dataset, Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Variable } from "@rdfjs/types"
 import { asArray } from "../utils.js"
 import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { LiteralValue, rdfjs } from "./fdr.js"
+import { LiteralValue, fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
 import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, PropertyValue, IRISubjectId } from "./dataspecAPI.js"
@@ -18,7 +18,7 @@ import { Subscription } from "subscription"
  */
 abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
  
-  protected properties: object | null = null
+  public properties: object | null = null
 
   readonly changes: Array<PropertyChange> = []
   protected workingCopies : SubjectLightCopy[] = [] 
@@ -51,75 +51,122 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     this.changes.push(...change)
   }
 
-  // Find, in the array of literals the one matching the required language, or
-  // as a fallback, the one that has no language specified.
-  protected literalWithLang(values: Array<Literal>, lang?: string): Literal {
-    let result: Literal | null = null
-    if (!lang && this.getGraph()) {
-
-    }
-    for (let idx in values) {
-      if (values[idx].language == lang)
-        result = values[idx]
-      else if ( (!result || !lang) && !values[idx].language)
-        result = values[idx]
-    }
-    if (!result && !lang)
-      result = values[0]
-    return result!
+  protected onlyWithLanguage(values: Array<Literal>, lang: string): Literal[] {
+    return values.filter(value => value.language == lang)
   }
 
-  get(prop: string, lang?: string): Subject | LiteralValue | null {
-
-    if (!this.ready || this.properties == null)
-      throw new Error('Object not ready')
-
-    prop = this.resolveName(prop)
-
-    const propEntry = this.properties[prop]    
-    let res: any 
-    if (propEntry instanceof Array) {
-      if (propEntry.length == 0)
-        return null
-      else
-        res = propEntry[0]
-    }
-    else if (propEntry)
-      res = propEntry
-    else
-      return null
-
-    if (type_guards.isLiteral(res)) {
-      if (!lang)
-        lang = this.getGraph().env.config.lang
-      let langIsOptional = false
-      if (lang && lang.endsWith("?")) {
-        lang = lang.replace("?", "")
-        langIsOptional = true
+  /**
+   * Parse the language string or if not set, parse the environment's default language setting
+   * @param lang 
+   * @returns 
+   */
+  private parseLangString(lang?: string): {language?: string, languageIsOptional: boolean}
+  {
+      let language : string|undefined = lang
+      let languageIsOptional : boolean = false
+      if (!language)
+        language = this.getGraph().env.config.lang
+      if (language && language.endsWith("?")) {
+        language = language.replace("?", "")
+        languageIsOptional = true
       }
-      if (propEntry instanceof Array)
-        res = this.literalWithLang(propEntry, lang)
-      if (res == null && langIsOptional) 
-        res = propEntry[0]
-      return (res as Literal).value
-    }
-    else if (type_guards.isLiteralValue(res))
-       return res as LiteralValue
-    else if (type_guards.isSubjectValue(res))
-      return res as Subject
-    else 
-      throw new Error("Type mismatch - a property in a subject is of no recognizable JavaScript type.")
+      return {language, languageIsOptional}
   }
 
-  getAll(prop: string): Subject[] | LiteralValue[] {
+  /**
+   * parse a literal into a js value accordig to the datatype property
+   * @param literal 
+   * @returns 
+   */
+  private makeValueFromLiteral(literal: Literal) : LiteralValue {
+    debugger
+    switch(literal.datatype.value) {
+      case "http://www.w3.org/2001/XMLSchema#int" : {
+        Number.parseInt(literal.value)
+      }
+      case "http://www.w3.org/2001/XMLSchema#decimal" : {
+        Number.parseFloat(literal.value)
+      }
+      case "http://www.w3.org/2001/XMLSchema#boolean" : {
+        return literal.value === "true"
+      }
+      default : {
+        return literal.value
+      }
+    }
+
+  }
+
+  /**
+   * 
+   * @param prop 
+   * @param lang the language of the requested values. If set, only values with the given
+   * language will be returned. If no values of the given language are present and the 
+   * language is optional (lang ends with '?'), all the values will be returned. If not set,
+   * all the values will be returned
+   * @returns an array consisting of all the values of the given property. If the values
+   * are string literals only values with the specified language are returned. Non
+   * string literals are transformed into js objects according to their set datatype.
+   * If threre are no values with the given language and teh 
+   */
+  getAll(prop: string, lang?: string): Subject[] | LiteralValue[] {
+    debugger
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
-    prop = this.resolveName(prop)    
-    let propEntry = this.properties[prop]
-    if (propEntry instanceof Array)
-      return propEntry
+    
+    let {language, languageIsOptional} = this.parseLangString(lang)
+    prop = this.resolveName(prop)
+    let raw = this.properties[prop]    
+    if (!raw || raw.length == 0) return [] as any[]
+
+    let values : Literal[]|Subject[]|LiteralValue[]
+    if (raw instanceof Array)
+      values = raw
     else
-      return [propEntry]
+      values = [raw]
+
+    //we've ensured values is a non empty array
+    if(type_guards.isLiteral(values[0])) {
+      let filtered : Literal[]
+      if (language) {
+        filtered = this.onlyWithLanguage(values as Literal[], language)
+        if (filtered.length == 0 && languageIsOptional) {
+          filtered = values as Literal[]
+        }
+      }
+      else {
+        filtered = values as Literal[] 
+      }
+      return filtered.map(this.makeValueFromLiteral)
+    }
+    else if (type_guards.isLiteralValue(values[0])) {
+      return values as LiteralValue[]
+    }
+    else if (type_guards.isSubjectValue(values[0])) {
+      return values as Subject[]
+    }
+    else {
+      throw new Error("Type mismatch - a property in a subject is of no recognizable JavaScript type.")
+    }
+  }
+  
+
+  /**
+   * 
+   * @param prop 
+   * @param lang the language of the requested values. If set, only values with the given
+   * language will be returned. If no values of the given language are present and the 
+   * language is optional (lang ends with '?'), all the values will be returned. If not set,
+   * all the values will be returned
+   * @returns the (first) value of the given property with the given language (if set) or if 
+   * no language is set or the language is optional and no values with the given language are present, 
+   * the first value present
+   */
+
+  get(prop: string, lang: string): Subject| LiteralValue|null {
+    let res = this.getAll(prop, lang)
+    if (res.length == 0) return null
+    else return res[0]
   }
 
   set(prop: string, ...object: Subject[] | LiteralValue[]): Subject {
@@ -291,10 +338,10 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
 
     let change : PropertyChange|null = null
     if (this.properties.hasOwnProperty(prop)) {
-      change = new PropertyReplaced(prop, asArray(this.val(prop)), val.map(x => rdfjs.literal(x)))
+      change = new PropertyReplaced(prop, asArray(this.val(prop)), val.map(x => rdfjs.literal(x, this.getGraph().env.config.lang)))
     }
     else {
-      change = new PropertyAdded(prop, val.map(x => rdfjs.literal(x)))
+      change = new PropertyAdded(prop, val.map(x => rdfjs.literal(x, this.getGraph().env.config.lang)))
     }  
     this.enqueueToChangeBuffer(change)
 
@@ -524,6 +571,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
         return x || target[prop] 
       },
       set(target, prop, value) {
+        debugger
         let s = target as Subject
         target.set(prop.toString(), value)
         return true
@@ -602,7 +650,12 @@ class  SubjectLightCopy extends SubjectBase {
     super(original.id)
     this.properties = {}
     for (const property of original.propertyNames()) {
-      this.properties[property] = original.getAll(property)
+      const values = (original as SubjectBase).properties![this.resolveName(property)]
+      if (values instanceof Array) 
+        this.properties[property] = values.slice()     
+      else {
+        this.properties[property] = values 
+      }
     }
   }
 
@@ -778,9 +831,9 @@ export const type_guards = {
            literal instanceof Number || 
            typeof literal == "number" || 
            (literal instanceof Array && (literal.length == 0 || 
-            (typeof literal[0] === 'string' || 
+            typeof literal[0] === 'string' || 
             typeof literal[0] === 'boolean' || 
-            typeof literal[0] === 'number')))
+            typeof literal[0] === 'number'))
   },
   isRemoteDataSpec(dataSpec : DataSpec<any>) : dataSpec is RemoteDataSpec<any> {
     const asRemote = dataSpec as RemoteDataSpec<any>
@@ -801,7 +854,7 @@ export const type_guards = {
     return (entity as Quad).termType == 'Quad'   
   },
   
-  isLiteral(entity: NamedNode | BlankNode | Quad | Variable | Literal): entity is Literal{ 
+  isLiteral(entity: any): entity is Literal{ 
     return (entity as Literal).termType == 'Literal'   
   }
 
