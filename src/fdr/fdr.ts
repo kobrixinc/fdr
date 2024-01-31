@@ -51,7 +51,18 @@ function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: 
 
 export interface RDFJS {
   named(iri: string): NamedNode
-  literal(value: string | number | boolean, lang?: string, type?: string): Literal
+  /**
+   * Construct literaral with the given value for a given language
+   * @param value 
+   * @param lang if value is a string, this is the language which will be
+   * associated with it. The parameter has no effect if the value is not
+   * a string. If value is a string and lang is not set, the resulting literal
+   * will have no language (duh.)
+   * TODO we probably need a type parameter in order to support non string
+   * types which are represented by JS strings 
+   * 
+   */
+  literal(value: string | number | boolean, lang?: string): Literal
   quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph): Quad
   metaQuad(x: Quad, y: NamedNode, z: Quad|NamedNode|Literal, g?: Quad_Graph): Quad
 }
@@ -61,13 +72,7 @@ function DefaultRDFJS<TBase extends new (...args: any[]) => WithResolver>(Base: 
     named(iri: string) { 
       return mf.namedNode(this.resolver.resolve(iri))
     }  
-    literal(value: string | number | boolean, lang?: string, type?: string) { 
-      if (lang) {
-        return mf.literal(value.toString(), lang) 
-      }
-      if (type) {
-        return mf.literal(value.toString(), mf.namedNode(type)) 
-      }
+    literal(value: string | number | boolean, lang?: string) { 
 
       switch (typeof value) {
         case 'string': {
@@ -136,19 +141,14 @@ export class rdfjs {
   static named(iri: string) 
     { return rdfjs.maker.named(iri) }
 
+  /**
+   * 
+   * @param value 
+   * @param lang 
+   * @returns 
+   */
   static literal(value: string | number | boolean, lang?: string) { 
-    let type
-    debugger
-    if (typeof value == "number") {
-      if (Number.isInteger(value))
-        type = "http://www.w3.org/2001/XMLSchema#int" 
-      else
-        type = "http://www.w3.org/2001/XMLSchema#decimal" 
-    }
-    else if (typeof value == "boolean") 
-        type = "http://www.w3.org/2001/XMLSchema#boolean" 
-
-    return rdfjs.maker.literal(value, lang, type) 
+    return rdfjs.maker.literal(value, lang) 
   }
 
   static quad(x: NamedNode, y: NamedNode, z: Term, g?:Quad_Graph) 

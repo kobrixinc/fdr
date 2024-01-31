@@ -5,9 +5,10 @@ import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadC
 import { LiteralValue, fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
-import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, PropertyValue, IRISubjectId } from "./dataspecAPI.js"
+import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
 
+type _InternalPropertyValue = Literal | Subject
 
 /**
  * Base class for the concrete Subject implementation.
@@ -36,8 +37,14 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   public onReferentsChanged : Subscription = new Subscription()
   protected onPropertyChanged : Subscription = new Subscription()
 
-  propertyAsSubject(propertyName: string, value: PropertyValue): Subject {
-    const id = new PropertyValueIdentifier(this.id, propertyName, value)
+  propertyAsSubject(propertyName: string, value: LiteralValue|Subject, lang? : string): Subject {
+    let parsedLang = this.parseLangString(lang)
+
+    const id = new PropertyValueIdentifier(
+      this.id, 
+      propertyName, 
+      type_guards.isSubjectValue(value) ? value : rdfjs.literal(value, parsedLang.language))
+      
     const subject = (this as unknown as SubjectBase).getGraph().factory.subject(id)
     return subject
   }
@@ -60,7 +67,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * @param lang 
    * @returns 
    */
-  private parseLangString(lang?: string): {language?: string, languageIsOptional: boolean}
+  protected parseLangString(lang?: string): {language?: string, languageIsOptional: boolean}
   {
       let language : string|undefined = lang
       let languageIsOptional : boolean = false
@@ -79,7 +86,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * @returns 
    */
   private makeValueFromLiteral(literal: Literal) : LiteralValue {
-    debugger
     switch(literal.datatype.value) {
       case "http://www.w3.org/2001/XMLSchema#int" : {
         Number.parseInt(literal.value)
@@ -110,7 +116,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * If threre are no values with the given language and teh 
    */
   getAll(prop: string, lang?: string): Subject[] | LiteralValue[] {
-    debugger
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
     
@@ -119,7 +124,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     let raw = this.properties[prop]    
     if (!raw || raw.length == 0) return [] as any[]
 
-    let values : Literal[]|Subject[]|LiteralValue[]
+    let values : Literal[]|Subject[]
     if (raw instanceof Array)
       values = raw
     else
@@ -138,9 +143,6 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
         filtered = values as Literal[] 
       }
       return filtered.map(this.makeValueFromLiteral)
-    }
-    else if (type_guards.isLiteralValue(values[0])) {
-      return values as LiteralValue[]
     }
     else if (type_guards.isSubjectValue(values[0])) {
       return values as Subject[]
@@ -163,42 +165,43 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * the first value present
    */
 
-  get(prop: string, lang: string): Subject| LiteralValue|null {
+  get(prop: string, lang?: string): Subject|LiteralValue|null {
     let res = this.getAll(prop, lang)
     if (res.length == 0) return null
     else return res[0]
   }
+  
 
-  set(prop: string, ...object: Subject[] | LiteralValue[]): Subject {
+  set(prop: string, lang?: string, ...object: Subject[] | LiteralValue[]): Subject {
     let res : any
     prop = this.resolveName(prop)    
     if (type_guards.isSubjectValue(object))
       res = this.setObj(prop, ...object)
     else if (type_guards.isLiteralValue(object))
-      res = this.setVal(prop, ...object)
+      res = this.setVal(prop, lang, ...object)
     else throw new Error(`${object} should be either Subject or LiteralValue`)
 
     return res
   }
 
-  setMore(prop: string, ...object: Subject[] | LiteralValue[]): Subject {
+  setMore(prop: string, lang?, ...object: Subject[] | LiteralValue[]): Subject {
     let res : any
 
     if (type_guards.isSubjectValue(object))
       res = this.setMoreObjects(prop, ...object)
     else if (type_guards.isLiteralValue(object))
-      res = this.setMoreValues(prop, ...object)
+      res = this.setMoreValues(prop, lang, ...object)
     
     return res
   }
 
-  delete(prop: string, ...val: Subject[] |LiteralValue[]): Subject {
+  delete(prop: string, lang?, ...val: Subject[] |LiteralValue[]): Subject {
     let res : any
 
     if (type_guards.isSubjectValue(val))
       res = this.deleteObject(prop, ...val)
     else if (type_guards.isSubjectValue(val))
-      res = this.deleteValue(prop, ...val)
+      res = this.deleteValue(prop, lang, ...val)
     else throw new Error(`${val} should be either Subject or LiteralValue`)
 
     return res
@@ -332,16 +335,18 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * @param val 
    * @returns 
    */
-  private setVal(prop: string, ...val: LiteralValue[]): Subject {
+  private setVal(prop: string, lang?: string, ...val: LiteralValue[]): Subject {
+    let parsedLang = this.parseLangString(lang)
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
 
     let change : PropertyChange|null = null
     if (this.properties.hasOwnProperty(prop)) {
-      change = new PropertyReplaced(prop, asArray(this.val(prop)), val.map(x => rdfjs.literal(x, this.getGraph().env.config.lang)))
+      change = new PropertyReplaced(
+        prop, asArray(this.val(prop)), val.map(x => rdfjs.literal(x, parsedLang.language)))
     }
     else {
-      change = new PropertyAdded(prop, val.map(x => rdfjs.literal(x, this.getGraph().env.config.lang)))
+      change = new PropertyAdded(prop, val.map(x => rdfjs.literal(x, parsedLang.language)))
     }  
     this.enqueueToChangeBuffer(change)
 
@@ -353,16 +358,18 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * Add some literal values for a key on the object.
    * 
    * @param prop 
+   * @param lang 
    * @param val 
    * @returns 
    */
-  private setMoreValues(prop: string, ...val: LiteralValue[]): Subject {
+  private setMoreValues(prop: string, lang?: string, ...val: LiteralValue[]): Subject {
+    let parsedLang = this.parseLangString(lang)
     prop = this.resolveName(prop)
 
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
 
-    let newval = val.map(v => rdfjs.literal(v))      
+    let newval = val.map(v => rdfjs.literal(v, parsedLang.language))      
     let change
 
     if (this.properties.hasOwnProperty(prop)) {
@@ -390,7 +397,8 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     return this
   }
 
-  private deleteValue(prop: string, ...val: LiteralValue[]): Subject {
+  private deleteValue(prop: string, lang?: string, ...val: LiteralValue[]): Subject {
+    let parsedLang = this.parseLangString(lang)
     prop = this.resolveName(prop)
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
@@ -399,7 +407,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       let oldval = this.properties[prop]
       const oldValAsArray = oldval instanceof Array ? oldval : [oldval]      
       // const removed = intersect(oldValAsArray, val)
-      const change = new PropertyRemoved(prop, val.map(x => rdfjs.literal(x)))
+      const change = new PropertyRemoved(prop, val.map(x => rdfjs.literal(x, parsedLang.language)))
       this.enqueueToChangeBuffer(change)
       this.apply([change])
     }
@@ -432,7 +440,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
           }
           else {
             const asLiteral = toRemove as Literal
-            const index = oldValues.findIndex(v => (v as Literal).value == asLiteral.value)
+            const index = oldValues.findIndex(v => (v as Literal).equals(asLiteral))
             if (index >= 0) {
               oldValues.splice(index, 1)
             }
@@ -442,7 +450,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     }    
   }
 
-  notifyReferentsChanged(referent, key) {
+  notifyReferentsChanged(referent, key) { 
     this.onReferentsChanged.dispatch(referent, key)
   }
 
@@ -571,9 +579,8 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
         return x || target[prop] 
       },
       set(target, prop, value) {
-        debugger
         let s = target as Subject
-        target.set(prop.toString(), value)
+        target.set(prop.toString(), undefined, value)
         return true
       }
     }
@@ -958,8 +965,8 @@ function union<T>(
 
     for (const el of b) {
       const index = res.findIndex(element => {
-        if (type_guards.isLiteralValue(element)) {
-          return element == el
+        if (type_guards.isLiteral(element)) {
+          return (element as Literal).equals(el as Literal)
         }
         else if (type_guards.isSubjectValue(element)) {
           return (element as Subject).id.equals((el as Subject).id)
@@ -995,7 +1002,7 @@ function copyShape(from: object) : object {
 export class PropertyValueIdentifier implements SubjectId {
   constructor(readonly subject: SubjectId, 
               readonly property: string,
-              readonly value: PropertyValue) { }
+              readonly value: _InternalPropertyValue) { }
   
   equals(other: SubjectId) {
     const pvi =  other as PropertyValueIdentifier

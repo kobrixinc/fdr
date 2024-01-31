@@ -170,7 +170,6 @@ export class LocalGraph implements Graph {
       throw new Error(`${desc} is expected to be a RemoteDataSpec`)
     if (!desc.ready) {
       let data : Dataset<Quad, Quad>
-      debugger
       if (type_guards.isSubjectValue(desc)) {
         const id = (desc as Subject).id 
         if (id instanceof PropertyValueIdentifier) {
