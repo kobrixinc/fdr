@@ -21,6 +21,12 @@ Of course there some existing software libraries to make use of RDF. Why should 
 
 FDR is at its first, usable and hopefully useful version. It is work in progress insofar that it does not yet provide a framework for creating conventional object-oriented models, which is a must for programmers to feel at home. But the foundations for that are there and the level of abstraction is already much more palpable than raw triples.
 
+# Tutorial
+
+A tutorial with an accompanying sample application, built using the VueJS framework, is available at:
+
+[https://kobrixinc.github.io/fdr-tutorial/](https://kobrixinc.github.io/fdr-tutorial/)
+
 # Capabilities
 
 FDR offers the following essentially orthogonal capabilities to a [Java/Type]Script programmer:
