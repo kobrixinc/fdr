@@ -19,7 +19,7 @@ type _InternalPropertyValue = Literal | Subject
  */
 abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
  
-  public properties: object | null = null
+  protected properties: object | null = null
 
   readonly changes: Array<PropertyChange> = []
   protected workingCopies : SubjectLightCopy[] = [] 
@@ -588,6 +588,9 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
       this, 
       () => this.graph, 
       (name) => this.graph.env.resolver.resolve(name))
+
+    result.hydrate(this.properties||{})
+
     result = new Proxy<SubjectLightCopy>(result, handler)
     if (reactivityDecorator)
       result = reactivityDecorator(result)
@@ -656,12 +659,15 @@ class  SubjectLightCopy extends SubjectBase {
               private resolver : (string) => string) {
     super(original.id)
     this.properties = {}
-    for (const property of original.propertyNames()) {
-      const values = (original as SubjectBase).properties![this.resolveName(property)]
+  }
+
+  public hydrate(properties: object) {
+    for (const property of Object.keys(properties || {})) {
+      const values = properties![this.resolveName(property)]
       if (values instanceof Array) 
-        this.properties[property] = values.slice()     
+        this.properties![property] = values.slice()     
       else {
-        this.properties[property] = values 
+        this.properties![property] = values 
       }
     }
   }
