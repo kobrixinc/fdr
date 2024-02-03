@@ -1,4 +1,3 @@
-import { Literal } from "@rdfjs/types"
 import { PropertyChange } from "./changemgmt.js"
 import { LiteralValue } from "./fdr.js"
 
@@ -114,7 +113,7 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
   ingest(result : any)
 }
 
-export type PropertyValue = Literal | Subject
+// export type PropertyValue = Literal | Subject
 
 
 /**
@@ -173,37 +172,43 @@ export interface Subject extends DataSpec<Subject> {
    * Get the value of a specific property. If there are multiple values, 
    * retrieve only the first one
    * @param prop 
+   * @param lang 
    */
   get(prop: string, lang?: string): Subject | LiteralValue | null 
   
   /**
    * Get all the values of a specific property 
    * @param prop 
+   * @param lang 
    */
-  getAll(prop: string): Subject[] | LiteralValue[] 
+  getAll(prop: string, lang?: string): Subject[] | LiteralValue[] 
 
   /**
    * Set the value of a property; If the previous value of the property was annotated, this will remove the annotation
    * @param prop 
+   * @param lang 
    * @param object the new property value 
    * TODO the object could be actually be a working copy of a subject; is this a valid operation?
    */
-  set(prop: string, ...object: Subject[]|LiteralValue[]) : Subject
+  set(prop: string, lang?: string, ...object: Subject[]|LiteralValue[]) : Subject
+
 
   /**
    * Add more values of a property; The annotations of the old values are preserved
    * @param prop 
+   * @param lang 
    * @param object the new property value 
    * TODO the object could be actually be a working copy of a subject; is this a valid operation?
    */
-  setMore(prop: string, ...object: Subject[]|LiteralValue[]) : Subject
+  setMore(prop: string, lang?: string, ...object: Subject[]|LiteralValue[]) : Subject
 
   /**
    * delete some values from a property
    * @param prop the property whose values are to be deleted
+   * @param lang 
    * @param val the values to delete
    */
-  delete(prop: string, ...val: Subject[] |LiteralValue[]) : Subject
+  delete(prop: string, lang?: string, ...val: Subject[] |LiteralValue[]) : Subject
 
 
   /**
@@ -244,8 +249,12 @@ export interface Subject extends DataSpec<Subject> {
    * 
    * @param propertyName The property name.
    * @param value The property value - a literal or another subject.
+   * @param lang The language of the value to identify. If not specified, the
+   * environment's default language will be used. If set, the language is
+   * non optional regardless of wheather it is set as optional. I.e. this
+   * method will always return a subject which represents the 
    */
-  propertyAsSubject(propertyName: string, value: Literal|Subject): Subject
+  propertyAsSubject(propertyName: string, value: LiteralValue|Subject, lang?: string): Subject
 
 }
 

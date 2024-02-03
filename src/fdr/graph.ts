@@ -4,6 +4,7 @@ import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./da
 import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
 import { TripleStore } from "./triplestore-client.js"
 import { rdfjs, GraphEnvironment } from "./fdr.js"
+import { Dataset, Quad } from "@rdfjs/types"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.
@@ -168,7 +169,7 @@ export class LocalGraph implements Graph {
     if (!type_guards.isRemoteDataSpec(desc))
       throw new Error(`${desc} is expected to be a RemoteDataSpec`)
     if (!desc.ready) {
-      let data
+      let data : Dataset<Quad, Quad>
       if (type_guards.isSubjectValue(desc)) {
         const id = (desc as Subject).id 
         if (id instanceof PropertyValueIdentifier) {
