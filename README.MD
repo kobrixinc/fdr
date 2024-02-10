@@ -28,7 +28,7 @@ npm install @kobrix/fdr
 
 Connecting to a triplestore with a local cache and reading some data:
 
-```
+```TypeScript
 import { SPARQLProtocolClient, fdr } from '@kobrix/fdr'
 
 // Setup some prefixes to use globally when providing IRIs for properties and entities.
