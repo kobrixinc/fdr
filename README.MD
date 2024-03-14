@@ -14,6 +14,8 @@ The goals of FDR as a framework and a toolkit are:
 
 **Tutorial:** https://kobrixinc.github.io/fdr-tutorial/ (app repo https://github.com/kobrixinc/fdr-tutorial)
 
+**API Docs:** https://kobrixinc.github.io/fdr/api/index.html
+
 **Programmer's Guide:** https://kobrixinc.github.io/fdr/ 
 
 
