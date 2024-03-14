@@ -1,0 +1,18 @@
+@kobrix/fdr@0.0.27 /home/borislav/code/fdr
+├── @rdfjs/data-model@2.0.1
+├── @rdfjs/dataset@2.0.1
+├── @rdfjs/types@1.1.0
+├── @types/chai@4.3.4
+├── @types/expect@24.3.0
+├── @types/isomorphic-fetch@0.0.36
+├── @types/mocha@10.0.1
+├── chai@4.3.7
+├── isomorphic-fetch@3.0.0
+├── mocha@10.2.0
+├── np@7.6.2
+├── rdf-ext@2.4.0
+├── subscription@3.0.0
+├── ts-mocha@10.0.0
+├── ts-node@10.9.1
+└── typedoc@0.23.24
+
