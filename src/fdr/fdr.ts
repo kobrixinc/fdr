@@ -106,6 +106,7 @@ function DefaultRDFJS<TBase extends new (...args: any[]) => WithResolver>(Base: 
 
 
 export type LiteralValue = number | string | boolean
+export type LiteralStruct = { value: string, language?: string, datatype?: NamedNode }
 
 export type  { NameResolver, DefaultNameResolver } from "./naming.js"
 export type { Subject } from "./dataspecAPI.js"

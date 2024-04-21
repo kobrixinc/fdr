@@ -1,5 +1,6 @@
+//import { Literal } from "@rdfjs/types"
 import { PropertyChange } from "./changemgmt.js"
-import { LiteralValue } from "./fdr.js"
+import { LiteralValue, LiteralStruct } from "./fdr.js"
 
 /*
 This module contains all the types the user needs in order to interact with
@@ -190,7 +191,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param object the new property value 
    * TODO the object could be actually be a working copy of a subject; is this a valid operation?
    */
-  set(prop: string, lang?: string, ...object: Subject[]|LiteralValue[]) : Subject
+  set(prop: string, ...object: Subject[]|LiteralValue[]|LiteralStruct[]) : Subject
 
 
   /**
@@ -200,7 +201,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param object the new property value 
    * TODO the object could be actually be a working copy of a subject; is this a valid operation?
    */
-  setMore(prop: string, lang?: string, ...object: Subject[]|LiteralValue[]) : Subject
+  setMore(prop: string, ...object: Subject[]|LiteralValue[]|LiteralStruct[]) : Subject
 
   /**
    * delete some values from a property
@@ -208,7 +209,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param lang 
    * @param val the values to delete
    */
-  delete(prop: string, lang?: string, ...val: Subject[] |LiteralValue[]) : Subject
+  delete(prop: string, ...val: Subject[] |LiteralValue[]|LiteralStruct[]) : Subject
 
 
   /**
@@ -254,7 +255,7 @@ export interface Subject extends DataSpec<Subject> {
    * non optional regardless of wheather it is set as optional. I.e. this
    * method will always return a subject which represents the 
    */
-  propertyAsSubject(propertyName: string, value: LiteralValue|Subject, lang?: string): Subject
+  propertyAsSubject(propertyName: string, value: LiteralValue|Subject|LiteralStruct): Subject
 
 }
 
