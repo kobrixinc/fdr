@@ -5,7 +5,7 @@ import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadC
 import { LiteralStruct, LiteralValue, fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
-import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId } from "./dataspecAPI.js"
+import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId, AnnotatedDomainElement, DMEFactory } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
 
 type _InternalPropertyValue = Literal | Subject
@@ -1113,5 +1113,43 @@ export class PropertyValueIdentifier implements SubjectId {
         value: (this.value as Subject).id || this.value //TODO this could be another property value id, so needs to be recursively 
       }
     )
+  }
+}
+export class SubjectAnnotatedFactory implements DMEFactory<SubjectId, Subject> {
+  
+  get elementType() {  return SubjectImpl }
+  make(...args): AnnotatedDomainElement<SubjectId, Subject> {
+    const id = args[0]
+    const graph = args[1]
+    // const resolver = this.graph.env.resolver
+      
+    // function resolve(id : SubjectId) : SubjectId {
+    //   if (id  instanceof PropertyValueIdentifier) {
+    //     return new PropertyValueIdentifier(
+    //       resolve(id.subject),
+    //       resolver.resolve(id.property),
+    //       id.value) 
+    //   } 
+    //   else if (id instanceof IRISubjectId) {
+    //     return new IRISubjectId(resolver.resolve(id.iri))
+    //   }
+    //   throw new Error(`Subject id ${id} is unsupported`)
+    // }
+    // const resolved = resolve(id)
+    // /*
+    // TODO 
+    // we need a better (O(1)) retrieval of existing subjects
+    // from the map; the key is not a primitive value, so subjects.get()
+    // does not work 
+    // */
+    // for (const entry of this.graph.cache.subjects.entries()) {
+    //   if (entry[0].equals(resolved)) {
+    //     return entry[1] 
+    //   }
+    //   this.graph.cache.subjects.get(resolved)
+    // }
+    const res = new SubjectImpl(id, graph)
+//    this.graph.cache.subjects.set(resolved, res)
+    return new AnnotatedDomainElement(id.toString(), res) 
   }
 }

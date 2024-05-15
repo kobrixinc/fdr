@@ -1,10 +1,11 @@
 
 import { QuadChange } from "./changemgmt.js"
-import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
-import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
+import { AnnotatedDomainElement, DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
+import { SubjectImpl, type_guards, PropertyValueIdentifier, SubjectAnnotatedFactory } from "./dataspec.js"
 import { TripleStore } from "./triplestore-client.js"
 import { rdfjs, GraphEnvironment } from "./fdr.js"
 import { Dataset, Quad } from "@rdfjs/types"
+import makeEntities from "./entity-factory.js"
 
 /**
  * A Graph is a collection of Subjects, each with their properties.
@@ -52,16 +53,32 @@ export class LocalGraph implements Graph {
   public label : string
   readonly factory: DataSpecFactory
   client: TripleStore
+
+  // For a performant cache we can use something like this:
+  // https://github.com/tykowale/ts-hash-map 
+  // assuming it gets a hashCode+equals style support, in addition
+  // to the clever stuff it's already doing with well-known JS types.
   private cache = { 
-    subjects: new Map<SubjectId, SubjectImpl>()
+    subjects: new Map<SubjectId, Subject>()
   } 
+  private internal_factories = {
+    'subject': new SubjectAnnotatedFactory()
+  }
   private _reactivityDecorator : <T extends Subject>(T) => T = (x) => x
 
   private static factory_impl = class implements DataSpecFactory {
     
     constructor(readonly graph: LocalGraph) { }
 
-    subject(id: SubjectId): SubjectImpl {
+    subject(id: SubjectId): Subject {
+      // let existing = this.graph.cache.subjects.get(id)
+      // if (existing)
+      //   return existing
+      // let newel: AnnotatedDomainElement<SubjectId, Subject> = 
+      //   this.graph.internal_factories.subject.make(id, this.graph)
+      // this.graph.cache.subjects.set(newel.id, newel.element)
+      // return newel.element
+
       const resolver = this.graph.env.resolver
       
       function resolve(id : SubjectId) : SubjectId {
@@ -77,6 +94,7 @@ export class LocalGraph implements Graph {
         throw new Error(`Subject id ${id} is unsupported`)
       }
       const resolved = resolve(id)
+
       /*
       TODO 
       we need a better (O(1)) retrieval of existing subjects
@@ -93,6 +111,10 @@ export class LocalGraph implements Graph {
       this.graph.cache.subjects.set(resolved, res)
       return res 
     
+    }
+
+    get entity(): Record<string, Function> {
+      return makeEntities;
     }
   }
 

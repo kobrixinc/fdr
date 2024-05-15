@@ -274,5 +274,29 @@ export interface Subject extends DataSpec<Subject> {
    * @param id 
    */
   subject(id: SubjectId): Subject
+
+  /**
+   * Return a map from entity type names (e.g. class names)
+   * to factory functions. The map is assembled through Typescript
+   * annotations (see doc ref).
+   */
+  get entity(): Record<string, Function>
 }
 
+
+export class AnnotatedDomainElement<IdType, ElementType> {
+  mentions: Array<string> = []
+
+  constructor(readonly id: IdType, readonly element: ElementType) {
+  }  
+}
+export interface DMEFactory<IdType, ElementType extends DataSpec<ElementType>> {
+
+  /**
+   * Return the class 
+   */
+  get elementType(): Function
+
+  make(...args): AnnotatedDomainElement<IdType, ElementType>
+
+}
