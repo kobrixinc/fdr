@@ -1,7 +1,6 @@
 import { assert, expect } from "chai"
 import { fdr, fdrmake }  from "../../src/fdr/fdr.js"
 import SPARQLProtocolClient from "../../src/fdr/sparql-triplestore-client.js"
-import { ResolverHolder } from "src/index.js"
 
 const prefixes: {[key: string]: any}  = {
   "dbr": "http://dbpedia.org/resource/",
@@ -44,7 +43,20 @@ describe("FDR API Tests", function() {
 
   }).timeout(20000)
 
-  it.only("changing a working copy should not change the primary copy", async () => {
+  it.only("cache uses proper key comparison", async () => {
+    let id1 = fdr.subjectId("dbr:Miami")
+    let subject = graph.factory.subject(id1)
+    expect(subject.ready).to.be.false
+    let subject_ready = await graph.use(subject)
+    expect(subject_ready.ready).to.be.true
+    subject = graph.factory.subject(id1)
+    expect(subject.ready).to.be.true
+    let id2 = fdr.subjectId("dbr:Miami")
+    let subject2 = graph.factory.subject(id2)
+    expect(subject2.ready).to.be.true
+  }).timeout(20000)
+
+  it("changing a working copy should not change the primary copy", async () => {
     let subject = graph.factory.subject(fdr.subjectId("dbr:Miami"))
     subject = await graph.use(subject)
     let wc = subject.workingCopy()
