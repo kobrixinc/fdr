@@ -2,9 +2,10 @@ import { DataFactory, Literal, Quad_Graph, Quad_Object } from "@rdfjs/types"
 import modelFactory  from "@rdfjs/data-model"
 import { NamedNode, Quad, Term } from "@rdfjs/types"
 import { ResolverHolder, WithResolver } from "./naming.js"
-import { IRISubjectId, SubjectId } from "./dataspecAPI.js"
+import { DomainAnnotatedFactories, IRISubjectId, SubjectId } from "./dataspecAPI.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { TripleStore } from "./triplestore-client.js"
+import { basicDomainFactories } from "./dataspec.js"
 
 const mf = modelFactory as DataFactory
 
@@ -25,9 +26,15 @@ export interface FDRConfig {
   lang: string | undefined 
 }
 
+type GraphSpecification = {
+  store: TripleStore,
+  id? : string,
+  factories? : DomainAnnotatedFactories
+}
+
 export interface FDR {
   subjectId(name: string): SubjectId
-  graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph
+  graph(graphSpecification: GraphSpecification): Graph
   config: FDRConfig
 }
 
@@ -36,8 +43,15 @@ function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: 
     subjectId(name: string): SubjectId {
       return new IRISubjectId(this.resolver.resolve(name))
     }  
-    graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph {
-      let localgraph = new LocalGraph(this, graphSpecification.store, "", "")
+    graph(graphSpecification: GraphSpecification): Graph {
+      let domainFactories = graphSpecification.factories ?
+        graphSpecification.factories :
+        basicDomainFactories()
+      let localgraph = new LocalGraph(
+        this, 
+        graphSpecification.store, 
+        "", 
+        domainFactories)
       return localgraph
     }  
 
@@ -46,8 +60,6 @@ function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: 
     }
   }
 }
-
-
 
 export interface RDFJS {
   named(iri: string): NamedNode

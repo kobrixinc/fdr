@@ -5,8 +5,9 @@ import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadC
 import { LiteralStruct, LiteralValue, fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester } from "./triplestore-client.js"
-import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId, AnnotatedDomainElement, DMEFactory } from "./dataspecAPI.js"
+import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId, AnnotatedDomainElement, DMEFactory, DomainAnnotatedFactories } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
+import { getHashCode } from "@tykowale/ts-hash-map"
 
 type _InternalPropertyValue = Literal | Subject
 
@@ -588,7 +589,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
       },
       set(target, prop, value) {
         let s = target as Subject
-        target.set(prop.toString(), undefined, value)
+        target.set(prop.toString(), value)
         return true
       }
     }
@@ -876,9 +877,14 @@ export const type_guards = {
   },
   
   isLiteral(entity: any): entity is Literal { 
-    return (entity as Literal).termType == 'Literal' ||
+    let pred = (x) => 
+      typeof x === "object" && 
+      x !== null && 
+      "termType" in x && 
+      x['termType'] == 'Literal'
+    return pred(entity) ||
       (entity instanceof Array && 
-       (entity.length == 0 || (entity[0] as Literal).termType == "Literal"))
+       (entity.length == 0 || (pred(entity[0]))))
   },
 
   isLiteralStruct(entity: any): entity is LiteralStruct { 
@@ -1022,10 +1028,21 @@ function copyShape(from: object) : object {
  * This is the Object based equivalent of an RDF triple
  */
 export class PropertyValueIdentifier implements SubjectId {
+  private hash: number = 0
+
   constructor(readonly subject: SubjectId, 
               readonly property: string,
               readonly value: _InternalPropertyValue) { }
   
+  hashCode(): number {
+    if (this.hash)
+      return this.hash
+    this.hash = this.subject.hashCode()
+    this.hash ^= (this.hash * 31) + getHashCode(this.property);
+    this.hash |= 0;    
+    return this.hash
+  }
+
   equals(other: SubjectId) {
     const pvi =  other as PropertyValueIdentifier
     if (pvi.subject) {
@@ -1118,38 +1135,40 @@ export class PropertyValueIdentifier implements SubjectId {
 export class SubjectAnnotatedFactory implements DMEFactory<SubjectId, Subject> {
   
   get elementType() {  return SubjectImpl }
+
+  identify(...args): SubjectId {
+    return args[0]  
+  }
+
   make(...args): AnnotatedDomainElement<SubjectId, Subject> {
     const id = args[0]
     const graph = args[1]
-    // const resolver = this.graph.env.resolver
-      
-    // function resolve(id : SubjectId) : SubjectId {
-    //   if (id  instanceof PropertyValueIdentifier) {
-    //     return new PropertyValueIdentifier(
-    //       resolve(id.subject),
-    //       resolver.resolve(id.property),
-    //       id.value) 
-    //   } 
-    //   else if (id instanceof IRISubjectId) {
-    //     return new IRISubjectId(resolver.resolve(id.iri))
-    //   }
-    //   throw new Error(`Subject id ${id} is unsupported`)
-    // }
-    // const resolved = resolve(id)
-    // /*
-    // TODO 
-    // we need a better (O(1)) retrieval of existing subjects
-    // from the map; the key is not a primitive value, so subjects.get()
-    // does not work 
-    // */
-    // for (const entry of this.graph.cache.subjects.entries()) {
-    //   if (entry[0].equals(resolved)) {
-    //     return entry[1] 
-    //   }
-    //   this.graph.cache.subjects.get(resolved)
-    // }
-    const res = new SubjectImpl(id, graph)
-//    this.graph.cache.subjects.set(resolved, res)
-    return new AnnotatedDomainElement(id.toString(), res) 
+    const element = new SubjectImpl(id, graph)
+    let res = new AnnotatedDomainElement(id, element)
+    // no mentions for a subject....
+    return res
   }
+}
+
+export class EntityAnnotatedFactory implements DMEFactory<IRISubjectId, Subject> {
+  
+  get elementType() {  return SubjectImpl }
+
+  identify(...args): IRISubjectId {
+    return args[0]
+  }
+
+  make(...args): AnnotatedDomainElement<IRISubjectId, Subject> {
+    const id = args[0]
+    const graph = args[1]
+    const element = new SubjectImpl(id, graph)
+    let res = new AnnotatedDomainElement(id, element)
+    // no mentions for a subject....
+    return res
+  }
+}
+
+export function basicDomainFactories() {
+  return new DomainAnnotatedFactories()
+    .add("subject", new SubjectAnnotatedFactory())
 }

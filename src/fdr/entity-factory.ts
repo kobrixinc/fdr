@@ -1,6 +1,4 @@
-import { LocalGraph, fdr } from "./fdr.js"
-import { DataSpec } from "./dataspecAPI.js"
-
+import { AnnotatedDomainElement, DMEFactoryImpl, DataSpec } from "./dataspecAPI.js"  
 class AttributeModel {
   constructor(readonly name: string, readonly iri: string) {
     console.log('created an attribute', name, iri)
@@ -65,19 +63,23 @@ const entity = (spec: Object) => {
     const maker = function(iri) {
       let id = iri
       if (!iri && spec.hasOwnProperty('iriFactory')) {
-        console.log('compute id', spec)
+        // console.log('compute id', spec)
         id = spec['iriFactory']()
       }
       let result = new (<any> finalClass)(id)
       let model = metadata[target.name]
-      console.log('making object from model', model)
-      return result
+      // console.log('making object from model', model)
+      // return result
+      return new AnnotatedDomainElement(iri, result)
     }
+    const identifier = function(iri) { return iri }
+    const factory = new DMEFactoryImpl(target, identifier, maker)
+
     Object.defineProperty(make, target.name, {
-      enumerable: false,
+      enumerable: true,
       configurable: false,
       writable: false,
-      value: maker,
+      value: factory // maker,
     })
     let classModel = new ClassModel()
     classModel.factory = maker

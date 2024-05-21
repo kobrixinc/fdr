@@ -10,7 +10,7 @@
       "request": "launch",
       "runtimeArgs": [
         "run",
-        "api-tests"
+        "entity-tests"
       ],
       "runtimeExecutable": "npm",
       "skipFiles": [

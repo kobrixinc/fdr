@@ -1,6 +1,7 @@
 //import { Literal } from "@rdfjs/types"
 import { PropertyChange } from "./changemgmt.js"
 import { LiteralValue, LiteralStruct } from "./fdr.js"
+import { getHashCode } from "@tykowale/ts-hash-map"
 
 /*
 This module contains all the types the user needs in order to interact with
@@ -116,6 +117,11 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
 
 // export type PropertyValue = Literal | Subject
 
+export interface DomainElementId<T extends DomainElementId<T>> {
+  hashCode(): number
+  equals(other: T): boolean
+  toString(): string
+}
 
 /**
  * The identifier of a subject
@@ -123,14 +129,16 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
  * All implementations of this interface need to be immutable
  * 
  */
-export interface SubjectId {
-  toString(): string
-  equals(other : SubjectId): boolean
+export interface SubjectId extends DomainElementId<SubjectId> {
 } 
 
 export class IRISubjectId implements SubjectId {
   
   constructor(readonly iri: string){}
+
+  hashCode(): number {
+    return getHashCode(this.iri)    
+  }
 
   toString(): string {
     return this.iri
@@ -259,32 +267,15 @@ export interface Subject extends DataSpec<Subject> {
 
 }
 
-
-/**
- * TODO:
- * The LocalGraph.factory implementation enforces the invariant
- * that each time we create a DataSpec with the same definition,
- * we are returning the same object.
- * 
- * Should that be the contract for the interface?
- */
- export interface DataSpecFactory {
-  /**
-   * Create a subject from a subject identifier;
-   * @param id 
-   */
-  subject(id: SubjectId): Subject
-
-  /**
-   * Return a map from entity type names (e.g. class names)
-   * to factory functions. The map is assembled through Typescript
-   * annotations (see doc ref).
-   */
-  get entity(): Record<string, Function>
-}
-
-
 export class AnnotatedDomainElement<IdType, ElementType> {
+
+  /**
+   * The 'mentions' is a list of all IRI of nodes in the graph whose
+   * properties may affect the content of the domain element. That is,
+   * anytime a triple with a subject IRI in the mentions set gets
+   * removed or added as part of a change, the domain element will
+   * get notified when the change is committed.
+   */
   mentions: Array<string> = []
 
   constructor(readonly id: IdType, readonly element: ElementType) {
@@ -297,6 +288,39 @@ export interface DMEFactory<IdType, ElementType extends DataSpec<ElementType>> {
    */
   get elementType(): Function
 
+  identify(...args): IdType 
+
   make(...args): AnnotatedDomainElement<IdType, ElementType>
 
+}
+
+export class DMEFactoryImpl<IdType, ElementType extends DataSpec<ElementType> > 
+  implements DMEFactory<IdType, ElementType> {
+    constructor(
+      readonly elementType: Function, 
+      readonly identify: (...args) => IdType,
+      readonly make: (...args) => AnnotatedDomainElement<IdType, ElementType>) 
+    {}
+  }
+
+export class DomainAnnotatedFactories {
+  private factories = new Map<string, DMEFactory<any, any>>()
+
+  add<IdType, ElementType extends DataSpec<ElementType>>
+    (typename: string, factory: DMEFactory<IdType, ElementType>): DomainAnnotatedFactories {
+      if (this.factories.has(typename))
+        throw "Trying to add duplicate factory name '" + typename + "' in DomainAnnotatedFactories."
+      this.factories.set(typename, factory)
+      return this
+  }
+  addFromMap(factories: object): DomainAnnotatedFactories {
+    Object.keys(factories).forEach(name => {
+      this.add(name, factories[name])
+    })
+    return this
+  }
+
+  get factoryMap(): Map<string, DMEFactory<any, any>> {
+    return this.factories
+  }
 }

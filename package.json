@@ -27,6 +27,7 @@
   },
   "homepage": "https://github.com/kobrixinc/fdr#readme",
   "dependencies": {
+    "@tykowale/ts-hash-map": "../../gitclones/ts-hash-map",
     "@rdfjs/data-model": "^2.0.0",
     "@rdfjs/dataset": "^2.0.0",
     "@rdfjs/types": "^1.1.0",

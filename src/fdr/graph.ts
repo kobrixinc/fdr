@@ -1,12 +1,11 @@
 
 import { QuadChange } from "./changemgmt.js"
-import { AnnotatedDomainElement, DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
+import { AnnotatedDomainElement, DMEFactory, DataSpec, DomainAnnotatedFactories, DomainElementId, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
 import { SubjectImpl, type_guards, PropertyValueIdentifier, SubjectAnnotatedFactory } from "./dataspec.js"
 import { TripleStore } from "./triplestore-client.js"
 import { rdfjs, GraphEnvironment } from "./fdr.js"
 import { Dataset, Quad } from "@rdfjs/types"
-import makeEntities from "./entity-factory.js"
-
+import { HashMap } from "@tykowale/ts-hash-map"
 /**
  * A Graph is a collection of Subjects, each with their properties.
  * 
@@ -18,7 +17,7 @@ export interface Graph {
    */
   env: GraphEnvironment 
   
-  factory: DataSpecFactory
+  factory: any
 
   /**
    * Intending to use the specified data, make sure it is 
@@ -50,90 +49,55 @@ export interface Graph {
 export class LocalGraph implements Graph { 
 
   public id : string
-  public label : string
-  readonly factory: DataSpecFactory
+  // readonly factory: DataSpecFactory
   client: TripleStore
 
   // For a performant cache we can use something like this:
   // https://github.com/tykowale/ts-hash-map 
   // assuming it gets a hashCode+equals style support, in addition
   // to the clever stuff it's already doing with well-known JS types.
-  private cache = { 
-    subjects: new Map<SubjectId, Subject>()
-  } 
+  private cache = new HashMap<DomainElementId<any>, DataSpec<any>>()
+
   private internal_factories = {
     'subject': new SubjectAnnotatedFactory()
   }
   private _reactivityDecorator : <T extends Subject>(T) => T = (x) => x
 
-  private static factory_impl = class implements DataSpecFactory {
-    
-    constructor(readonly graph: LocalGraph) { }
-
-    subject(id: SubjectId): Subject {
-      // let existing = this.graph.cache.subjects.get(id)
-      // if (existing)
-      //   return existing
-      // let newel: AnnotatedDomainElement<SubjectId, Subject> = 
-      //   this.graph.internal_factories.subject.make(id, this.graph)
-      // this.graph.cache.subjects.set(newel.id, newel.element)
-      // return newel.element
-
-      const resolver = this.graph.env.resolver
-      
-      function resolve(id : SubjectId) : SubjectId {
-        if (id  instanceof PropertyValueIdentifier) {
-          return new PropertyValueIdentifier(
-            resolve(id.subject),
-            resolver.resolve(id.property),
-            id.value) 
-        } 
-        else if (id instanceof IRISubjectId) {
-          return new IRISubjectId(resolver.resolve(id.iri))
-        }
-        throw new Error(`Subject id ${id} is unsupported`)
+  private factoryInGraphContext(factory: DMEFactory<any, any>): Function {
+    return (...args) => {
+      let id = factory.identify(...args)
+      let existing = this.cache.get(id)
+      if (existing) {
+        return existing
       }
-      const resolved = resolve(id)
-
-      /*
-      TODO 
-      we need a better (O(1)) retrieval of existing subjects
-      from the map; the key is not a primitive value, so subjects.get()
-      does not work 
-      */
-      for (const entry of this.graph.cache.subjects.entries()) {
-        if (entry[0].equals(resolved)) {
-          return entry[1] 
-        }
-        this.graph.cache.subjects.get(resolved)
-      }
-      const res = new SubjectImpl(resolve(id), this.graph)
-      this.graph.cache.subjects.set(resolved, res)
-      return res 
-    
-    }
-
-    get entity(): Record<string, Function> {
-      return makeEntities;
+      let newel: AnnotatedDomainElement<any, any> = factory.make(...args, this)
+      this.cache.set(newel.id, newel.element)
+      return newel.element          
     }
   }
 
-  //TODO consider this as public graph creation factory to discourage direct calls to the constructor
-  // static _make(env:GraphEnvironment, client: TripleStore, id : string, label : string = id)
-  // {
-  //   return new LocalGraph(env, client, id, label)
-  // }
+  private initializeFactories(fmap: Map<string, DMEFactory<any, any>>): void {
+    fmap.forEach((factory, typename) => {
+      this.internal_factories[typename] = this.factoryInGraphContext(factory)
+    })
+  }
 
   /**
    * This constructor is internal and should not be used directly
    */
-  constructor(readonly env:GraphEnvironment, client: TripleStore, id : string, label : string = id) {
+  constructor(readonly env:GraphEnvironment, 
+              client: TripleStore, 
+              id : string,
+              annotatedFactories: DomainAnnotatedFactories) {
     this.client = client
-    this.factory = new LocalGraph.factory_impl(this)
+    // this.factory = new LocalGraph.factory_impl(this)
     this.id = id
-    this.label = label
+    this.initializeFactories(annotatedFactories.factoryMap)
   }
 
+  get factory() {
+    return this.internal_factories
+  }
   /**
    * Set the reactivity decorators for all working copies created from subjects
    * in this graph.
@@ -156,9 +120,7 @@ export class LocalGraph implements Graph {
 
   
   clear() {
-    this.cache = { 
-      subjects: new Map<SubjectId, SubjectImpl>() 
-    }
+    this.cache = new HashMap<DomainElementId<any>, DataSpec<any>>() 
   }
 
   /**
