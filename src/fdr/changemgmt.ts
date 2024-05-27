@@ -6,8 +6,10 @@ export class KBChange {
   constructor() { }
 }
 
-export class QuadChange {
-  constructor(readonly quad: Quad) { }
+export class QuadChange extends KBChange {
+  constructor(readonly quad: Quad) { 
+    super()
+  }
 }
 
 export class NoChange extends KBChange {

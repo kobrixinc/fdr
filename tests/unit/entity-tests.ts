@@ -26,8 +26,9 @@ describe("FDR Entities Tests", function() {
       .contain("Person")
   }).timeout(20000)
 
-  it("Can create a new simple entity and save in graph", async () => {
+  it.only("Can create a new simple entity and save in graph", async () => {
     let a = graph.factory.Address("http://test.org/address/1")
+    expect(a.id).to.equal("http://test.org/address/1")
     a.commit()
   }).timeout(20000)
 
