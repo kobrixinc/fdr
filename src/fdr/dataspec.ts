@@ -9,7 +9,7 @@ import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, Subjec
 import { Subscription } from "subscription"
 import { getHashCode } from "@tykowale/ts-hash-map"
 
-type _InternalPropertyValue = Literal | Subject
+type _InternalPropertyValue = Literal | SubjectId
 
 /**
  * Base class for the concrete Subject implementation.
@@ -39,7 +39,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   protected onPropertyChanged : Subscription = new Subscription()
 
   propertyAsSubject(propertyName: string, value: LiteralValue|Subject|LiteralStruct, lang? : string): Subject {
-    const object = type_guards.isSubjectValue(value) ? value 
+    const object = type_guards.isSubjectValue(value) ? value.id 
                     : type_guards.isLiteralStruct(value) ?
                       rdfjs.literal(value.value, value.language) 
                     : rdfjs.literal(value, this.parseLangString(lang).language)
@@ -243,10 +243,11 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       throw new Error('Object not ready')
 
     if (this.properties.hasOwnProperty(prop)) {
-      change = new PropertyReplaced(prop, asArray(this.obj(prop)), object)
+      let subid: SubjectId[] = this.obj(prop)?.map(s=>s.id) || []
+      change = new PropertyReplaced(prop, subid, object.map(s=>s.id))
     }
     else {
-      change = new PropertyAdded(prop, object)
+      change = new PropertyAdded(prop, object.map(s=>s.id))
     }
     this.enqueueToChangeBuffer(change)
     this.apply([change])
@@ -264,8 +265,8 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       let oldval = this.properties[prop]
       if (type_guards.isSubjectValue(oldval)) {
         const oldValAsArray = oldval instanceof Array ? oldval : [oldval]        
-        const u = union(oldValAsArray, objects)
-        change = new PropertyReplaced(prop, oldValAsArray, u)
+        const u = union(oldValAsArray, objects).map(s=>s.id)
+        change = new PropertyReplaced(prop, oldValAsArray.map(s=>s.id), u)
         
       }
       else {
@@ -274,7 +275,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       }
     }
     else {
-      change = new PropertyAdded(prop, objects)
+      change = new PropertyAdded(prop, objects.map(s=>s.id))
     }
     this.enqueueToChangeBuffer(change)
     this.apply([change])
@@ -292,7 +293,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       const oldValAsArray = oldval instanceof Array ? oldval : [oldval]
       // const removed = intersect(oldValAsArray, object)
 
-      const change = new PropertyRemoved(prop, object)
+      const change = new PropertyRemoved(prop, object.map(s=>s.id))
       this.apply([change])
       this.enqueueToChangeBuffer(change)
     }
@@ -519,7 +520,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
           ontologyId: this.getGraph().id,
           subject: {id: this.id.subject},
           predicate: this.id.property,
-          object: (this.id.value as Subject).id ? {id: (this.id.value as Subject).id} : this.id.value,
+          object: (this.id.value as SubjectId) ? {id: (this.id.value as SubjectId)} : this.id.value,
         }
       }
     }
@@ -617,7 +618,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   async commit(): Promise<void> {
     let changes : QuadChange[] = []
     this.changes.forEach(change =>  {
-      const quadchanges = change.toQuadChanges(this)
+      const quadchanges = change.toQuadChanges(this.id)
       changes = changes.concat(quadchanges)
     })
     try {
@@ -845,6 +846,12 @@ export const type_guards = {
     || (subject instanceof Array && (subject.length == 0 || subject[0] instanceof SubjectImpl))
   },
 
+  isSubjectId(value): value is SubjectId|SubjectId[] {
+    let pred = (x) => x instanceof IRISubjectId || x instanceof PropertyValueIdentifier
+    return pred(value) || (value instanceof Array && 
+                   (value.length == 0 ||  pred(value[0])))
+  },
+
   isLiteralValue(literal): literal is LiteralValue|LiteralValue[] {
     return literal instanceof String || 
            typeof literal == "string" || 
@@ -1044,18 +1051,20 @@ export class PropertyValueIdentifier implements SubjectId {
   }
 
   equals(other: SubjectId) {
+    if (! (other instanceof PropertyValueIdentifier) )
+        return false
     const pvi =  other as PropertyValueIdentifier
     if (pvi.subject) {
       if (this.subject.equals(pvi.subject) && this.property == pvi.property) {
-        if (type_guards.isSubjectValue(this.value)) {
-          if (type_guards.isSubjectValue(pvi.value)) {
-            return this.value.id.equals(pvi.value.id)    
+        if (type_guards.isSubjectId(this.value)) {
+          if (type_guards.isSubjectId(pvi.value)) {
+            return this.value.equals(pvi.value)
           }
           else {
             return false
           } 
         }
-        else if (type_guards.isSubjectValue(pvi.value))
+        else if (type_guards.isSubjectId(pvi.value))
           return false
         else {
           return this.value.value == pvi.value.value
@@ -1084,7 +1093,7 @@ export class PropertyValueIdentifier implements SubjectId {
      * @returns 
      * TODO the value could be a meta subject which should be serialized as such as well
      */
-    const makeQuad = (subject : SubjectId, property: string, value: Subject|Literal) => {
+    const makeQuad = (subject : SubjectId, property: string, value: SubjectId|Literal) => {
       
       let subjectInQuad : Quad|NamedNode
       let propertyInQuad : NamedNode 
@@ -1101,14 +1110,14 @@ export class PropertyValueIdentifier implements SubjectId {
         throw new Error(`${subject} is an unsupported type of subject`)
       }
      
-      if (!type_guards.isSubjectValue(value)) {
+      if (type_guards.isLiteral(value)) {
         objectInQuad = value // rdfjs.literal(value)
       } 
-      else if (value.id instanceof IRISubjectId) {
-        objectInQuad = rdfjs.named(value.id.iri)
+      else if (value instanceof IRISubjectId) {
+        objectInQuad = rdfjs.named(value.iri)
       }
-      else if (value.id instanceof PropertyValueIdentifier) {
-        objectInQuad = makeQuad(value.id.subject, value.id.property, value.id.value)
+      else if (value instanceof PropertyValueIdentifier) {
+        objectInQuad = makeQuad(value.subject, value.property, value.value)
       }
       else {
         throw new Error (`${value} is not supported object value`)
@@ -1127,13 +1136,15 @@ export class PropertyValueIdentifier implements SubjectId {
       {
         subject : this.subject.toString(), //recursively serialize the subject ID -- this could be another PropertyValueIdentifier
         property: this.property,
-        value: (this.value as Subject).id || this.value //TODO this could be another property value id, so needs to be recursively 
+        value: this.value as SubjectId || this.value //TODO this could be another property value id, so needs to be recursively 
       }
     )
   }
 }
 export class SubjectAnnotatedFactory implements DMEFactory<SubjectId, Subject> {
   
+  constructor(readonly graph: Graph) {} 
+
   get elementType() {  return SubjectImpl }
 
   identify(...args): SubjectId {
@@ -1168,7 +1179,6 @@ export class EntityAnnotatedFactory implements DMEFactory<IRISubjectId, Subject>
   }
 }
 
-export function basicDomainFactories() {
-  return new DomainAnnotatedFactories()
-    .add("subject", new SubjectAnnotatedFactory())
+export let basicDomainFactories = {
+  "subject" : (graph:Graph) => new SubjectAnnotatedFactory(graph)
 }

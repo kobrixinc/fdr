@@ -1,5 +1,6 @@
 import { PropertyChange, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { AnnotatedDomainElement, DMEFactoryImpl, DataSpec } from "./dataspecAPI.js"  
+import { AnnotatedDomainElement, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, IRISubjectId } from "./dataspecAPI.js"  
+import { Graph, LocalGraph } from "./graph.js"
 class AttributeModel {
   constructor(readonly name: string, readonly iri: string) {
     console.log('created an attribute', name, iri)
@@ -12,15 +13,36 @@ class RelationModel {
   }
 }
 
+/**
+ * The semantic model of a TypeScript class is build out of
+ * attributes (equivalently "data properties") and relations
+ * (equivalently "object properties")
+ */
 class ClassModel {
+  private static object_class = new Function()
   private static internal_iri_property = '__fdr__assigned_iri'
+  private _attributes: Record<string, AttributeModel> = {}
+
   iriAttribute: string | undefined
   iriFactory: Function | undefined 
-  attributes: AttributeModel[] = []
+  
   relations : RelationModel[] = []
-  factory : Function = () => new Object()
+  
+  javascriptClass: Function = ClassModel.object_class
+ 
+  get classname() { return this.javascriptClass.prototype.name }
+  set attributes(attributeList: AttributeModel[]) {
+    attributeList.forEach(a => this._attributes[a.name] = a)
+  }
 
-  get classname() { return this.factory.prototype.name }
+  /**
+   * Return the IRI of the property corresponding to a given
+   * JavaScript property, assuming that property is an attribute. 
+   * @param name 
+   */
+  attributeFor(name: string): AttributeModel | undefined {
+    return this._attributes[name]
+  }
 
   produceIri(entity: object): string {
     if (this.iriAttribute) {
@@ -51,7 +73,7 @@ class ClassModel {
   }
 
   semanticPropertyFor(key: string) {
-    let amodel = this.attributes.find(a => a.name == key)
+    let amodel = this.attributeFor(key)
     return amodel && amodel.iri
   }
 }
@@ -71,6 +93,7 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
     private __fdr__changes: Array<PropertyChange> = []
 
     private __track_changes(key: string) {
+      let self = this
       const property = Object.getOwnPropertyDescriptor(this, key)
       if (!property) return
       if (property.configurable === false) return
@@ -81,28 +104,38 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
         return
       }
 
+      let val = self[key]
+
       const getter = property.get
       const setter = property.set
       
-      Object.defineProperty(this, key, {
+      let def = {
         enumerable: true,
         configurable: true,
-        get: getter,
+        get: function() {
+          return getter ? getter.call(this) : val
+        },
         set: function fdrTrackingSetter(newVal) {
-          let oldVal = getter?.apply(this)
-          setter?.apply(this, newVal)
+          let oldVal = getter ? getter.call(this) : val
+          if (setter) setter.call(this, newVal)
+          else val = newVal
           let change = new PropertyReplaced(propIri, oldVal, newVal)
-          this.__fdr__changes.push(change)
+          self.__fdr__changes.push(change)
         }
-      })
+      }
+      Object.defineProperty(this, key, def)
     }
 
     private __fdr__prepare() {
       const keys = Object.keys(this)
       for (let i = 0; i < keys.length; i++) {
-        // TODO: check if this property is mapped to an RDF property
-        this.__track_changes(keys[i])
+        if (this.__fdr__model.attributeFor(keys[i]))
+          this.__track_changes(keys[i])
       }
+    }
+
+    private get graph(): LocalGraph {
+      return this.__fdr__model['graph']
     }
 
     constructor(...args: any[]) {
@@ -125,9 +158,20 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
 
       let changes : QuadChange[] = []
       this.__fdr__changes.forEach(change =>  {
-        const quadchanges = change.toQuadChanges(this)
+        const quadchanges = change.toQuadChanges(
+          new IRISubjectId(this.__fdr__model.produceIri(this)))
         changes = changes.concat(quadchanges)
-      })      
+      })
+
+      try {
+        const result = await this.graph.client.modify(changes)
+        if (!result.ok) {
+          throw new Error(`Could not commit changes ${changes}`)
+        }
+      }
+      finally {
+        this.__fdr__changes.splice(0, this.__track_changes.length)
+      }      
     }
      
      /**
@@ -139,42 +183,69 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
 }
 
 let metadata: { 'undefined': any} = {'undefined': null}
-let make: Record<string, Function> = {}
+let make: Record<string, DMEFactoryConstructor<any, any>> = {}
 
 function nextClass() {
   metadata['undefined'] = { 'attributes': [], 'relations' : []}
 }
 nextClass()
 
+class EntityFactory implements DMEFactory<IRISubjectId, any> {
+  classModel: ClassModel
+  constructor(readonly elementType: Function, 
+              readonly classModelBase: ClassModel,
+              readonly graph: Graph) {
+    this.classModel = Object.create(classModelBase)
+    this.classModel['graph'] = graph
+  }
+
+  identify(...args: any[]): IRISubjectId {
+    return args[0]
+  }
+  make(...args: any[]): AnnotatedDomainElement<IRISubjectId, any> {
+    let iri = args[0]
+    let id = iri
+    if (!iri && this.classModel.iriFactory) {
+      // console.log('compute id', spec)
+      id = this.classModel.iriFactory()
+    }
+    let result = new (<any> this.classModel.javascriptClass)(this.classModel, id)
+    return new AnnotatedDomainElement(iri, result)
+  }
+}
+
 const entity = (spec: Object) => {
   return (target: Constructor) => {
     let classModel = new ClassModel()    
     const finalClass = WithEntityDataSpec(target)
-    const maker = function(iri) {
-      let id = iri
-      if (!iri && spec.hasOwnProperty('iriFactory')) {
-        // console.log('compute id', spec)
-        id = spec['iriFactory']()
-      }
-      let result = new (<any> finalClass)(classModel, id)
-      let model = metadata[target.name]
-      // console.log('making object from model', model)
-      // return result
-      return new AnnotatedDomainElement(iri, result)
-    }
-    const identifier = function(iri) { return iri }
-    const factory = new DMEFactoryImpl(target, identifier, maker)
+    // const maker = function(iri) {
+    //   let id = iri
+    //   if (!iri && spec.hasOwnProperty('iriFactory')) {
+    //     // console.log('compute id', spec)
+    //     id = spec['iriFactory']()
+    //   }
+    //   let result = new (<any> finalClass)(classModel, id)
+    //   let model = metadata[target.name]
+    //   // console.log('making object from model', model)
+    //   // return result
+    //   return new AnnotatedDomainElement(iri, result)
+    // }
+    // const identifier = function(iri) { return iri }
+    //new DMEFactoryImpl(target, identifier, maker)
+
+    // classModel.factory = maker
+    classModel.javascriptClass = finalClass
+    classModel.attributes = metadata['undefined']['attributes']
+    classModel.relations = metadata['undefined']['relations']
+    metadata[target.name] = classModel    
 
     Object.defineProperty(make, target.name, {
       enumerable: true,
       configurable: false,
       writable: false,
-      value: factory // maker,
+      value: (graph: Graph) => 
+                new EntityFactory(target, classModel, graph)
     })
-    classModel.factory = maker
-    classModel.attributes = metadata['undefined']['attributes']
-    classModel.relations = metadata['undefined']['relations']
-    metadata[target.name] = classModel    
     nextClass()
   }
 }

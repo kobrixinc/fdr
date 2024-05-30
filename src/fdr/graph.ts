@@ -1,6 +1,6 @@
 
 import { QuadChange } from "./changemgmt.js"
-import { AnnotatedDomainElement, DMEFactory, DataSpec, DomainAnnotatedFactories, DomainElementId, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
+import { AnnotatedDomainElement, DMEFactory, DMEFactoryConstructor, DataSpec, DomainAnnotatedFactories, DomainElementId, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
 import { SubjectImpl, type_guards, PropertyValueIdentifier, SubjectAnnotatedFactory } from "./dataspec.js"
 import { TripleStore } from "./triplestore-client.js"
 import { rdfjs, GraphEnvironment } from "./fdr.js"
@@ -59,7 +59,7 @@ export class LocalGraph implements Graph {
   private cache = new HashMap<DomainElementId<any>, DataSpec<any>>()
 
   private internal_factories = {
-    'subject': new SubjectAnnotatedFactory()
+    'subject': new SubjectAnnotatedFactory(this)
   }
   private _reactivityDecorator : <T extends Subject>(T) => T = (x) => x
 
@@ -76,9 +76,9 @@ export class LocalGraph implements Graph {
     }
   }
 
-  private initializeFactories(fmap: Map<string, DMEFactory<any, any>>): void {
+  private initializeFactories(fmap: Map<string, DMEFactoryConstructor<any, any>>): void {
     fmap.forEach((factory, typename) => {
-      this.internal_factories[typename] = this.factoryInGraphContext(factory)
+      this.internal_factories[typename] = this.factoryInGraphContext(factory(this))
     })
   }
 

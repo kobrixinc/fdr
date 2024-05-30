@@ -9,12 +9,13 @@ const prefixes: {[key: string]: any}  = {
 
 let endpointurl = 'http://localhost:7200/repositories/starwars'
 let store = new SPARQLProtocolClient(endpointurl, endpointurl + "/statements")
-let domainFactories = {}
-Object.assign(domainFactories, basicDomainFactories().factoryMap, entityFactories)
+let domainFactories = new DomainAnnotatedFactories()
+  .addFromMap(basicDomainFactories)
+  .addFromMap(entityFactories)
 
 let graph = fdr.graph({
   store: store,
-  factories: new DomainAnnotatedFactories().addFromMap(domainFactories)
+  factories: domainFactories
 })
     
 describe("FDR Entities Tests", function() {

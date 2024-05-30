@@ -44,9 +44,9 @@ function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: 
       return new IRISubjectId(this.resolver.resolve(name))
     }  
     graph(graphSpecification: GraphSpecification): Graph {
-      let domainFactories = graphSpecification.factories ?
-        graphSpecification.factories :
-        basicDomainFactories()
+      let domainFactories = 
+        graphSpecification.factories ||
+        new DomainAnnotatedFactories().addFromMap(basicDomainFactories)
       let localgraph = new LocalGraph(
         this, 
         graphSpecification.store, 

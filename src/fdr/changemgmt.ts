@@ -1,6 +1,6 @@
 import { Literal, Quad } from "@rdfjs/types"
-import { Subject } from "./dataspecAPI.js"
-import { PropertyValueIdentifier, SubjectImpl } from "./dataspec.js"
+import { Subject, SubjectId } from "./dataspecAPI.js"
+import { PropertyValueIdentifier, SubjectImpl, type_guards } from "./dataspec.js"
 
 export class KBChange {
   constructor() { }
@@ -31,14 +31,14 @@ export class QuadRemoved extends QuadChange {
 
 export interface PropertyChange {
   readonly name: string
-  toQuadChanges(subject: Subject): Array<QuadChange>
+  toQuadChanges(subjectId: SubjectId): Array<QuadChange>
 }
 
 export class PropertyAdded implements PropertyChange {
-  constructor(readonly name: string, readonly value: Subject[] | Literal[]) {}
-  toQuadChanges(subject: Subject): Array<QuadChange> {
-    return this.value.map((added : Literal|Subject) => {
-      const pvi = new PropertyValueIdentifier(subject.id, this.name, added) 
+  constructor(readonly name: string, readonly value: SubjectId[] | Literal[]) {}
+  toQuadChanges(subjectId: SubjectId): Array<QuadChange> {
+    return this.value.map((added : Literal|SubjectId) => {
+      const pvi = new PropertyValueIdentifier(subjectId, this.name, added) 
       const newQuad = pvi.toQuad() 
       return new QuadAdded(newQuad)
     }) 
@@ -46,10 +46,10 @@ export class PropertyAdded implements PropertyChange {
 }
 
 export class PropertyRemoved implements PropertyChange {
-  constructor(readonly name: string, readonly value: Subject[] | Literal[], readonly annotation?: any[]) {}
-  toQuadChanges(subject: Subject): Array<QuadChange> {
-    return (this.value as (Subject|Literal)[]).map(added => {
-      const quad = new PropertyValueIdentifier(subject.id, this.name, added).toQuad()
+  constructor(readonly name: string, readonly value: SubjectId[] | Literal[], readonly annotation?: any[]) {}
+  toQuadChanges(subjectId: SubjectId): Array<QuadChange> {
+    return (this.value as (SubjectId|Literal)[]).map(removed => {
+      const quad = new PropertyValueIdentifier(subjectId, this.name, removed).toQuad()
       return new QuadRemoved(quad)
     })
   }
@@ -63,10 +63,10 @@ export class PropertyRemoved implements PropertyChange {
  */
 export class PropertyReplaced implements PropertyChange {
   constructor(readonly name: string, 
-              readonly oldvalue: Subject[] | Literal[],
-              readonly newvalue: Subject[]  | Literal[],
+              readonly oldvalue: SubjectId[] | Literal[],
+              readonly newvalue: SubjectId[]  | Literal[],
               readonly annotation?: any[]) {}
-  toQuadChanges(subject: Subject): Array<QuadChange> {
+  toQuadChanges(subjectId: SubjectId): Array<QuadChange> {
     const result = [] as QuadChange[]
 
     //a bitmap marking whether a new value was present before the change
@@ -78,8 +78,8 @@ export class PropertyReplaced implements PropertyChange {
     for (const oneOldValue of this.oldvalue) {
     
       const indexInNewValues = this.newvalue.findIndex(oneNewValue => {
-        if (oneOldValue instanceof SubjectImpl) {
-          if (oneOldValue.id == (oneNewValue as Subject).id) return true
+        if (type_guards.isSubjectId(oneOldValue)) {
+          if (oneOldValue.equals(oneNewValue)) return true
         }
         else {
           return oneNewValue == oneOldValue
@@ -95,7 +95,7 @@ export class PropertyReplaced implements PropertyChange {
         preexistingValues[indexInNewValues] = true
       }
       else {
-        const quad = new PropertyValueIdentifier(subject.id, this.name, oneOldValue).toQuad()
+        const quad = new PropertyValueIdentifier(subjectId, this.name, oneOldValue).toQuad()
         result.push(new QuadRemoved(quad))
       }
     }
@@ -103,7 +103,7 @@ export class PropertyReplaced implements PropertyChange {
     for (const i in this.newvalue)
     {
       if (!preexistingValues[i]) {
-        const quad = new PropertyValueIdentifier(subject.id, this.name, this.newvalue[i]).toQuad()
+        const quad = new PropertyValueIdentifier(subjectId, this.name, this.newvalue[i]).toQuad()
         const change = new QuadAdded(quad)
         result.push(change)
       }

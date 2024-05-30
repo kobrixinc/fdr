@@ -1,6 +1,6 @@
 //import { Literal } from "@rdfjs/types"
 import { PropertyChange } from "./changemgmt.js"
-import { LiteralValue, LiteralStruct } from "./fdr.js"
+import { LiteralValue, LiteralStruct, Graph } from "./fdr.js"
 import { getHashCode } from "@tykowale/ts-hash-map"
 
 /*
@@ -144,7 +144,7 @@ export class IRISubjectId implements SubjectId {
     return this.iri
   }
   equals(other: SubjectId): boolean {
-    return (other as IRISubjectId).iri == this.iri
+    return other instanceof IRISubjectId && (other as IRISubjectId).iri == this.iri
   }
 
 }
@@ -284,15 +284,30 @@ export class AnnotatedDomainElement<IdType, ElementType> {
 export interface DMEFactory<IdType, ElementType extends DataSpec<ElementType>> {
 
   /**
-   * Return the class 
+   * Return the class of elements this factory produces.
    */
   get elementType(): Function
 
+  /**
+   * Create just the identifier out of the arguments normally
+   * used to construct a complete instance. This is used to avoid
+   * creating instances already in a cache. 
+   * @param args arguments to construct a new element
+   */
   identify(...args): IdType 
 
+  /**
+   * Create a new element instance based on a list of arguments
+   * specific to this factory.
+   * @param args The arguments needed to create a new element
+   * instance.
+   */
   make(...args): AnnotatedDomainElement<IdType, ElementType>
 
 }
+
+export type DMEFactoryConstructor<IdType, ElementType extends DataSpec<ElementType>> 
+    = (Graph) => DMEFactory<IdType, ElementType>
 
 export class DMEFactoryImpl<IdType, ElementType extends DataSpec<ElementType> > 
   implements DMEFactory<IdType, ElementType> {
@@ -304,10 +319,10 @@ export class DMEFactoryImpl<IdType, ElementType extends DataSpec<ElementType> >
   }
 
 export class DomainAnnotatedFactories {
-  private factories = new Map<string, DMEFactory<any, any>>()
+  private factories = new Map<string, DMEFactoryConstructor<any, any>>()
 
   add<IdType, ElementType extends DataSpec<ElementType>>
-    (typename: string, factory: DMEFactory<IdType, ElementType>): DomainAnnotatedFactories {
+    (typename: string, factory: DMEFactoryConstructor<IdType, ElementType>): DomainAnnotatedFactories {
       if (this.factories.has(typename))
         throw "Trying to add duplicate factory name '" + typename + "' in DomainAnnotatedFactories."
       this.factories.set(typename, factory)
@@ -320,7 +335,7 @@ export class DomainAnnotatedFactories {
     return this
   }
 
-  get factoryMap(): Map<string, DMEFactory<any, any>> {
+  get factoryMap(): Map<string, DMEFactoryConstructor<any, any>> {
     return this.factories
   }
 }
