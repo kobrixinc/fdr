@@ -13,11 +13,17 @@ let domainFactories = new DomainAnnotatedFactories()
   .addFromMap(basicDomainFactories)
   .addFromMap(entityFactories)
 
-let graph = fdr.graph({
-  store: store,
-  factories: domainFactories
-})
+let graph = fdr.graph({store})
+
+function initGraph() {
+  graph = fdr.graph({
+    store: store,
+    factories: domainFactories
+  })
+}
     
+initGraph()
+
 describe("FDR Entities Tests", function() {
   it("Entity Annotations Properly Interpreted", async () => {
     let entityNames = Object.getOwnPropertyNames(graph.factory)
@@ -28,9 +34,14 @@ describe("FDR Entities Tests", function() {
   }).timeout(20000)
 
   it.only("Can create a new simple entity and save in graph", async () => {
-    let a = graph.factory.Address("http://test.org/address/1")
-    expect(a.id).to.equal("http://test.org/address/1")
-    a.commit()
+    let id = "http://test.org/address/1"
+    let a = graph.factory.Address(id)
+    expect(a.ready).to.equal(false)
+    expect(() => a.street).to.throw(Error)
+    await graph.use(a)
+    expect(a.id).to.equal(id)
+    // a.commit()
+  
   }).timeout(20000)
 
 })

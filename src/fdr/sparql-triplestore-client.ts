@@ -63,9 +63,10 @@ export class SparqlClient {
       },
       body: query
     })
-    console.log(result, await result.text())
+    let responseBody = await result.text()
+    console.log(result, responseBody)
     if (result.status >= 400) // we don't know to handle redirects and such
-      throw new Error(await result.text())
+      throw new Error(responseBody)
     return result
   }
 }

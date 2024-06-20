@@ -1,6 +1,8 @@
 import { PropertyChange, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { AnnotatedDomainElement, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, IRISubjectId } from "./dataspecAPI.js"  
+import { AnnotatedDomainElement, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, IRISubjectId, Tripler } from "./dataspecAPI.js"  
+import { rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
+import { Quads, TripleStore } from "./triplestore-client.js"
 class AttributeModel {
   constructor(readonly name: string, readonly iri: string) {
     console.log('created an attribute', name, iri)
@@ -30,7 +32,10 @@ class ClassModel {
   
   javascriptClass: Function = ClassModel.object_class
  
-  get classname() { return this.javascriptClass.prototype.name }
+  get classname() { 
+    return this.javascriptClass.prototype.constructor.name.replace('_as_FDR_Entity', '') 
+  }
+
   set attributes(attributeList: AttributeModel[]) {
     attributeList.forEach(a => this._attributes[a.name] = a)
   }
@@ -113,6 +118,8 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
         enumerable: true,
         configurable: true,
         get: function() {
+          if (!self.ready)
+            throw new Error("Entity " + self.toString() + " not ready for us, please call `Graph.use()` beforehand.")
           return getter ? getter.call(this) : val
         },
         set: function fdrTrackingSetter(newVal) {
@@ -142,6 +149,10 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
       super(...args.slice(1))
       this.__fdr__model = args[0]
       this.__fdr__prepare()
+    }
+
+    get typename(): string {
+      return this.__fdr__model.classname
     }
 
     workingCopy(reactivityDecoratorFunction? : <T extends NewType>(T) => T) : NewType {
@@ -190,13 +201,33 @@ function nextClass() {
 }
 nextClass()
 
+class EntityTripler implements Tripler<any, Quads> {
+
+  constructor(readonly graph: Graph, readonly classModel: ClassModel) { 
+
+  }
+
+  async fetch(client: TripleStore, element: any): Promise<Quads> {
+    
+    return client.fetch(rdfjs.named("htp://todo.org"))
+  }
+
+  ingest(element: any, rawdata: Quads): any {
+    return element
+  }
+}
+
 class EntityFactory implements DMEFactory<IRISubjectId, any> {
+
   classModel: ClassModel
+  readonly tripler: Tripler<any, Quads>
+  
   constructor(readonly elementType: Function, 
               readonly classModelBase: ClassModel,
               readonly graph: Graph) {
     this.classModel = Object.create(classModelBase)
     this.classModel['graph'] = graph
+    this.tripler = new EntityTripler(this.graph, this.classModel)
   }
 
   identify(...args: any[]): IRISubjectId {
@@ -218,22 +249,6 @@ const entity = (spec: Object) => {
   return (target: Constructor) => {
     let classModel = new ClassModel()    
     const finalClass = WithEntityDataSpec(target)
-    // const maker = function(iri) {
-    //   let id = iri
-    //   if (!iri && spec.hasOwnProperty('iriFactory')) {
-    //     // console.log('compute id', spec)
-    //     id = spec['iriFactory']()
-    //   }
-    //   let result = new (<any> finalClass)(classModel, id)
-    //   let model = metadata[target.name]
-    //   // console.log('making object from model', model)
-    //   // return result
-    //   return new AnnotatedDomainElement(iri, result)
-    // }
-    // const identifier = function(iri) { return iri }
-    //new DMEFactoryImpl(target, identifier, maker)
-
-    // classModel.factory = maker
     classModel.javascriptClass = finalClass
     classModel.attributes = metadata['undefined']['attributes']
     classModel.relations = metadata['undefined']['relations']

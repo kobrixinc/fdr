@@ -1,6 +1,6 @@
 
 import { QuadChange } from "./changemgmt.js"
-import { AnnotatedDomainElement, DMEFactory, DMEFactoryConstructor, DataSpec, DomainAnnotatedFactories, DomainElementId, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
+import { AnnotatedDomainElement, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, DomainAnnotatedFactories, DomainElementId, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
 import { SubjectImpl, type_guards, PropertyValueIdentifier, SubjectAnnotatedFactory } from "./dataspec.js"
 import { TripleStore } from "./triplestore-client.js"
 import { rdfjs, GraphEnvironment } from "./fdr.js"
@@ -58,9 +58,12 @@ export class LocalGraph implements Graph {
   // to the clever stuff it's already doing with well-known JS types.
   private cache = new HashMap<DomainElementId<any>, DataSpec<any>>()
 
-  private internal_factories = {
-    'subject': new SubjectAnnotatedFactory(this)
+  private factory_functions = {
+    'subject': this.factoryInGraphContext(new SubjectAnnotatedFactory(this))
   }
+
+  private factories = { }
+
   private _reactivityDecorator : <T extends Subject>(T) => T = (x) => x
 
   private factoryInGraphContext(factory: DMEFactory<any, any>): Function {
@@ -77,8 +80,10 @@ export class LocalGraph implements Graph {
   }
 
   private initializeFactories(fmap: Map<string, DMEFactoryConstructor<any, any>>): void {
-    fmap.forEach((factory, typename) => {
-      this.internal_factories[typename] = this.factoryInGraphContext(factory(this))
+    fmap.forEach((cons, typename) => {
+      let factory: DMEFactory<any, any> = cons(this)
+      this.factories[typename] = factory
+      this.factory_functions[typename] = this.factoryInGraphContext(factory)
     })
   }
 
@@ -96,7 +101,7 @@ export class LocalGraph implements Graph {
   }
 
   get factory() {
-    return this.internal_factories
+    return this.factory_functions
   }
   /**
    * Set the reactivity decorators for all working copies created from subjects
@@ -117,7 +122,6 @@ export class LocalGraph implements Graph {
   get reactivityDecrator() {
     return this._reactivityDecorator
   }
-
   
   clear() {
     this.cache = new HashMap<DomainElementId<any>, DataSpec<any>>() 
@@ -148,41 +152,20 @@ export class LocalGraph implements Graph {
 
 
   async use<T extends DataSpec<any>>(desc: T): Promise<T> {
-    //local graph only uses RemoteDataSpecs
-    let result = desc  
-    if (!type_guards.isRemoteDataSpec(desc))
-      throw new Error(`${desc} is expected to be a RemoteDataSpec`)
+
+    let factory: DMEFactory<any, T> = this.factories[desc.typename]
+
     if (!desc.ready) {
-      let data : Dataset<Quad, Quad>
-      if (type_guards.isSubjectValue(desc)) {
-        const id = (desc as Subject).id 
-        if (id instanceof PropertyValueIdentifier) {
-          data = await this.client.fetch(id.toQuad()) 
-        }
-        else if (id instanceof IRISubjectId){
-          data = await this.client.fetch(rdfjs.named(id.iri)) 
-        }
-        else {
-          throw new Error(`${id} is neither IRI, nor property value identifier`)
-        }
-      }
-      else {
-        throw new Error(`Fetching non subject dataspecs is not supported`)
-      }
-      if (data != null) {
-        desc.ingest(data)
-      }
-      result = desc
+      let raw = await factory.tripler.fetch(this.client, desc)
+      desc = factory.tripler.ingest(desc, raw)
     }
-    return result    
+    return desc
   }
   
-
   close(desc: DataSpec<any>): void {
     //TBD: should this remove the data spec from?
     throw new Error("Method not implemented.")
   }
-
 
   /**
    * Accept quad changes pushed from a remote source (e.g. BE triplestore)
@@ -192,5 +175,4 @@ export class LocalGraph implements Graph {
     //TODO
     console.log('not implemented')
   }
-
 }

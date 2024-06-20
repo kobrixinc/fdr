@@ -70,3 +70,5 @@ export interface SPARQLEndpoint {
    */
   sparqlSelect(query: { queryString: string } ): Promise<Array<object>>
 }
+
+export type Quads = Dataset<Quad, Quad>

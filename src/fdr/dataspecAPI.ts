@@ -1,6 +1,6 @@
 //import { Literal } from "@rdfjs/types"
 import { PropertyChange } from "./changemgmt.js"
-import { LiteralValue, LiteralStruct, Graph } from "./fdr.js"
+import { LiteralValue, LiteralStruct, Graph, TripleStore } from "./fdr.js"
 import { getHashCode } from "@tykowale/ts-hash-map"
 
 /*
@@ -31,6 +31,12 @@ FDR.
  * will return the user-facing type
  */
 export interface DataSpec<SELF extends DataSpec<SELF>> {
+
+  /**
+   * The unique name of the type of this data spec. 
+   */
+  typename: string
+
   /**
    * Construct a working copy of this dataspec.
    * 
@@ -81,41 +87,6 @@ export interface SubjectChangeSynchronization {
    syncFromDownstream(changes : PropertyChange[])
 
 }
-
-/**
- * A dataspec which is part of a remote graph i.e. is a local copy of a remote object.
- * A RemoteDataSpec's definition can be represented like a serializable query which
- * can be sent to the remote graph.
- * The result returned by the remote graph can then be ingested in the RemoteDataSpec
- * state.
- */
-export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SELF> {
-  
-  /*
-  query and ingest do not need to be separate parts of the public api.
-  we could replace them with a separate void method which performs the data
-  fetch and ingest. we do not need the raw data at any point in the external
-  API
-  */
-
-  /**
-   * The wire format of this data spec's definition which is to be sent to the
-   * remote graph in order to query the dataspec's backing data
-   * 
-   * This is transport specific and we aim to support different backends so we should
-   * leave it to the transport implementation to serialize the DataSpecs
-  */
-
-  //query : any
-
-  /**
-   * Ingest the result set of running the query into this dataspec's state
-   * @param result 
-   */
-  ingest(result : any)
-}
-
-// export type PropertyValue = Literal | Subject
 
 export interface DomainElementId<T extends DomainElementId<T>> {
   hashCode(): number
@@ -275,12 +246,31 @@ export class AnnotatedDomainElement<IdType, ElementType> {
    * anytime a triple with a subject IRI in the mentions set gets
    * removed or added as part of a change, the domain element will
    * get notified when the change is committed.
+   * 
+   * TODO: is that list really a property of the element or its factory? Does
+   * it change from entity to entity, or is it just derived purely from the
+   * entity type.
    */
   mentions: Array<string> = []
 
   constructor(readonly id: IdType, readonly element: ElementType) {
   }  
 }
+
+export interface Tripler<ElementType, RawData> {
+
+  fetch(client: TripleStore, element: ElementType): Promise<RawData> 
+
+  /**
+   * 
+   * @param element 
+   * @param rawdata 
+   * @return The code>element</code> parameter.
+   */
+  ingest(element: ElementType, rawdata: RawData): ElementType 
+}
+
+// this is not a factory anymore strictily speaking, so probably rename
 export interface DMEFactory<IdType, ElementType extends DataSpec<ElementType>> {
 
   /**
@@ -304,18 +294,26 @@ export interface DMEFactory<IdType, ElementType extends DataSpec<ElementType>> {
    */
   make(...args): AnnotatedDomainElement<IdType, ElementType>
 
+  get tripler(): Tripler<ElementType, any> 
 }
 
+/**
+ * A DMEFactory is typically graph-aware, it needs a reference to the 
+ * <code>Graph</code> instance. For that reason when configuring/bootstrapping
+ * FDR, one needs to provide factory constuctors - functions that will create
+ * the relevant factories based on a <code>Graph</code> instance.
+ */
 export type DMEFactoryConstructor<IdType, ElementType extends DataSpec<ElementType>> 
     = (Graph) => DMEFactory<IdType, ElementType>
 
-export class DMEFactoryImpl<IdType, ElementType extends DataSpec<ElementType> > 
+export abstract class DMEFactoryImpl<IdType, ElementType extends DataSpec<ElementType> > 
   implements DMEFactory<IdType, ElementType> {
     constructor(
       readonly elementType: Function, 
       readonly identify: (...args) => IdType,
       readonly make: (...args) => AnnotatedDomainElement<IdType, ElementType>) 
     {}
+    abstract get tripler(): Tripler<ElementType, any>
   }
 
 export class DomainAnnotatedFactories {

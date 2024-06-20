@@ -4,8 +4,8 @@ import { asArray } from "../utils.js"
 import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
 import { LiteralStruct, LiteralValue, fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
-import { DatasetIngester } from "./triplestore-client.js"
-import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId, AnnotatedDomainElement, DMEFactory, DomainAnnotatedFactories } from "./dataspecAPI.js"
+import { DatasetIngester, Quads, TripleStore } from "./triplestore-client.js"
+import { Subject, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId, AnnotatedDomainElement, DMEFactory, DomainAnnotatedFactories, Tripler } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
 import { getHashCode } from "@tykowale/ts-hash-map"
 
@@ -27,6 +27,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
 
   constructor(readonly id: SubjectId) {}  
 
+  get typename(): string { return "subject" }
   abstract getGraph() : Graph
   protected abstract notifyGraphAboutPropertyChange(prop : string[]) : void
   protected abstract resolveName(name : string) : string
@@ -488,7 +489,10 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
  * 
  * This class is only exported so that it's accessible to the `graph.ts` module.
  */
-export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> {
+export class SubjectImpl extends SubjectBase  {
+
+  get typename(): string { return 'subject' }
+
   getGraph(): Graph {
     return this.graph
   }
@@ -548,34 +552,6 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     for (const wc of this.workingCopies){
       wc.syncFromUpstream(changes)
     }
-  }
-
-  /**
-   * Ingest the quads from a dataset which are relevant to this Subject into 
-   * this Subject's properties
-   * 
-   * @param dataset 
-   */
-  ingest(dataset : Dataset<Quad, Quad>): void {
-    //isn't parseDataset and the logic after it duplicate?
-    const props = parseDataset(this.graph, this.id, dataset)
-    // const quads: Array<Quad> = Array.from(dataset['_quads'].values())
-    // This dataset.filter method is documented as part of the DatasetCore interface
-    // but it seems like it's not implemented yet. NEed to reach out to that rdfjs community
-    // and maybe get implicated, help or whatever...
-    // dataset.filter
-    // quads.filter( (quad:Quad) => quad.subject.value == this.id).forEach( quad => {
-    //   if (quad.object.termType == "NamedNode")
-    //     props[quad.predicate.value] = this.graph.factory.subject(quad.object.value)
-    //   else if (quad.object.termType == "Literal")
-    //     props[quad.predicate.value] = quad.object.value
-    // })
-    // should we merge here instead? what are different kinds of ingestion of triples about this subject?    
-    this.properties = props    
-    //TODO ingest annotation data from the dataset 
-    // for (const entry of Object.entries(annotation)) {
-    //   this.annotation[entry[0]] = entry[1]
-    // }
   }
 
   workingCopy(reactivityDecorator?: <T extends Subject>(original: T) => T): Subject {
@@ -649,7 +625,6 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     this.enqueueToChangeBuffer(...changes)
   }  
 }
-
 
 /**
  * A buffer for changes to another subject
@@ -777,55 +752,6 @@ function compareQuads(q1:Quad, q2:Quad) {
 
 }
 
-/**
- * parse a dataset into individual's properties
- * @param graph TODO only the factory is needed and it probably shouldn't be passed as parameter
- * @param subjectId The subject whose properties we are constructing
- * @param dataset The dataset to parse
- * @returns 
- */
-function parseDataset(graph : Graph, subjectId : SubjectId, dataset: Dataset<Quad, Quad>): object {
-  const props = {} 
-  const quads: Array<Quad> = Array.from(dataset['_quads'].values())
-  // This dataset.filter method is documented as part of the DatasetCore interface
-  // but it seems like it's not implemented yet. Need to reach out to that rdfjs community
-  // and maybe get implicated, help or whatever...
-  // dataset.filter
-
-  
-  quads.filter( (quad:Quad) => {
-      if (subjectId instanceof PropertyValueIdentifier) {
-        const asQuad = subjectId.toQuad()
-        return compareQuads(asQuad, quad.subject as Quad)
-      }
-      else {
-        // compare as normal IRI subjects
-        return (subjectId as IRISubjectId).iri == quad.subject.value
-      }
-    })
-    .forEach( quad => {
-      // console.log(quad)
-    let newVal
-    if (quad.object.termType == "NamedNode") {
-      newVal = graph.factory.subject(new IRISubjectId(quad.object.value))
-    }
-    else if (quad.object.termType == "Literal") {
-      newVal = quad.object //.value
-    }
-    if (props[quad.predicate.value] instanceof Array) {
-      props[quad.predicate.value].push(newVal)
-    }
-    else if (props[quad.predicate.value]) {
-      props[quad.predicate.value] = [props[quad.predicate.value], newVal]
-    }
-    else {
-      props[quad.predicate.value] = newVal
-    }    
-  })
-  // should we merge here instead? what are different kinds of ingestion of triples about this subject?    
-  return props
-}
-
 export const type_guards = {
   /**
    * Type quard for the DatasetIngeste type
@@ -863,10 +789,6 @@ export const type_guards = {
             typeof literal[0] === 'string' || 
             typeof literal[0] === 'boolean' || 
             typeof literal[0] === 'number'))
-  },
-  isRemoteDataSpec(dataSpec : DataSpec<any>) : dataSpec is RemoteDataSpec<any> {
-    const asRemote = dataSpec as RemoteDataSpec<any>
-    return asRemote.ingest !== undefined && asRemote.ready !== undefined
   },
 
   isSubjectChangeSynchronization(subject): subject is SubjectChangeSynchronization {
@@ -1141,9 +1063,83 @@ export class PropertyValueIdentifier implements SubjectId {
     )
   }
 }
+
+class SubjectTripler implements Tripler<Subject, Dataset> {
+
+  constructor(readonly graph: Graph) { }
+
+  async fetch(client: TripleStore, element: Subject): Promise<Dataset> {
+    return client.fetch(rdfjs.named((element.id as IRISubjectId).iri))
+  }
+
+  /**
+   * parse a dataset into individual's properties
+   * @param graph TODO only the factory is needed and it probably shouldn't be passed as parameter
+   * @param subjectId The subject whose properties we are constructing
+   * @param dataset The dataset to parse
+   * @returns 
+   */
+  private parseDataset(subjectId : SubjectId, dataset: Quads): object  {
+
+    const props = {} 
+    const quads: Array<Quad> = Array.from(dataset['_quads'].values())
+    // This dataset.filter method is documented as part of the DatasetCore interface
+    // but it seems like it's not implemented yet. Need to reach out to that rdfjs community
+    // and maybe get implicated, help or whatever...
+    // dataset.filter
+    
+    quads.filter( (quad:Quad) => {
+        if (subjectId instanceof PropertyValueIdentifier) {
+          const asQuad = subjectId.toQuad()
+          return compareQuads(asQuad, quad.subject as Quad)
+        }
+        else {
+          // compare as normal IRI subjects
+          return (subjectId as IRISubjectId).iri == quad.subject.value
+        }
+      })
+      .forEach( quad => {
+        // console.log(quad)
+      let newVal
+      if (quad.object.termType == "NamedNode") {
+        newVal = this.graph.factory.subject(new IRISubjectId(quad.object.value))
+      }
+      else if (quad.object.termType == "Literal") {
+        newVal = quad.object //.value
+      }
+      if (props[quad.predicate.value] instanceof Array) {
+        props[quad.predicate.value].push(newVal)
+      }
+      else if (props[quad.predicate.value]) {
+        props[quad.predicate.value] = [props[quad.predicate.value], newVal]
+      }
+      else {
+        props[quad.predicate.value] = newVal
+      }    
+    })
+    return props
+  }
+
+  ingest(element: Subject, rawdata: Quads): Subject {    
+    const impl = element as SubjectImpl
+    const props =this.parseDataset(impl.id, rawdata);
+    impl['properties'] = props    
+    //TODO ingest annotation data from the dataset 
+    // for (const entry of Object.entries(annotation)) {
+    //   this.annotation[entry[0]] = entry[1]
+    // }
+    return element
+  }
+}
+
+
 export class SubjectAnnotatedFactory implements DMEFactory<SubjectId, Subject> {
   
-  constructor(readonly graph: Graph) {} 
+  private triplerImpl: Tripler<Subject, Quads>
+
+  constructor(readonly graph: Graph) {
+    this.triplerImpl = new SubjectTripler(graph)
+  } 
 
   get elementType() {  return SubjectImpl }
 
@@ -1152,30 +1148,16 @@ export class SubjectAnnotatedFactory implements DMEFactory<SubjectId, Subject> {
   }
 
   make(...args): AnnotatedDomainElement<SubjectId, Subject> {
-    const id = args[0]
+    const id = args[0] as SubjectId
     const graph = args[1]
     const element = new SubjectImpl(id, graph)
     let res = new AnnotatedDomainElement(id, element)
     // no mentions for a subject....
     return res
   }
-}
 
-export class EntityAnnotatedFactory implements DMEFactory<IRISubjectId, Subject> {
-  
-  get elementType() {  return SubjectImpl }
-
-  identify(...args): IRISubjectId {
-    return args[0]
-  }
-
-  make(...args): AnnotatedDomainElement<IRISubjectId, Subject> {
-    const id = args[0]
-    const graph = args[1]
-    const element = new SubjectImpl(id, graph)
-    let res = new AnnotatedDomainElement(id, element)
-    // no mentions for a subject....
-    return res
+  get tripler(): Tripler<Subject, Quads> {
+    return this.triplerImpl
   }
 }
 
