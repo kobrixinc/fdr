@@ -14,6 +14,7 @@
     "dummy-test": "ts-mocha ./tests/unit/dummy-unit-test.ts",
     "api-tests": "ts-mocha tests/unit/fdr-api-tests.ts",
     "entity-tests": "ts-mocha tests/unit/entity-tests.ts",
+    "sparql-triplestore-tests": "ts-mocha tests/unit/sparql-triplestore-tests.ts",
     "test": "ts-mocha tests/**/*-tests.ts"
   },
   "repository": {

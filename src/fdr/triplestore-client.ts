@@ -28,6 +28,13 @@ export interface TripleStore {
    * subjects.
    */
   fetch(...subjects: Array<NamedNode | Quad>): Promise<Dataset>
+  
+  /**
+   * 
+   * @param queryPattern A JSON-LD pattern structure as describe above.
+   * @returns an array of pattern instantiations
+   */
+  match(queryPattern: object): Promise<Array<object>>
 
   /**
    * Apply a set of changes to the remote data store. 
