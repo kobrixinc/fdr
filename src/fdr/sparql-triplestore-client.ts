@@ -400,7 +400,17 @@ constructor(readonly endpointUrl: string,
   }
   
   async match(queryPattern: object): Promise<Array<object>> {
-    return []
+    let pattern = new QueryPattern(queryPattern)
+    pattern.patternFromStructure()
+    // console.log(pattern)    
+    let bindings = await this.sparqlSelect({queryString: pattern.toSparql()})
+    let result: Array<object> = []
+    bindings.forEach(binding => {
+      let match = pattern.bindingsToMatch(binding)
+      // console.log(match)
+      result.push(match)
+    })
+    return result
   }
 
   sparqlSelect(query: { queryString: string }): Promise<Array<object>> {

@@ -259,7 +259,17 @@ export class AnnotatedDomainElement<IdType, ElementType> {
 
 export interface Tripler<ElementType, RawData> {
 
-  fetch(client: TripleStore, element: ElementType): Promise<RawData> 
+  /**
+   * 
+   * Retrieve the relevant triples and populate a domain element from a given
+   * backing triplestore client.
+   * 
+   * @param client The triple store client to get the data from.
+   * @param element The domain element to populate with freshly read data
+   * from the store.
+   * @returns The <code>element</code> parameter.
+   */
+  fetch(client: TripleStore, element: ElementType): Promise<ElementType> 
 
   /**
    * 
@@ -267,7 +277,7 @@ export interface Tripler<ElementType, RawData> {
    * @param rawdata 
    * @return The code>element</code> parameter.
    */
-  ingest(element: ElementType, rawdata: RawData): ElementType 
+  // ingest(element: ElementType, rawdata: RawData): ElementType 
 }
 
 // this is not a factory anymore strictily speaking, so probably rename

@@ -1068,8 +1068,10 @@ class SubjectTripler implements Tripler<Subject, Dataset> {
 
   constructor(readonly graph: Graph) { }
 
-  async fetch(client: TripleStore, element: Subject): Promise<Dataset> {
-    return client.fetch(rdfjs.named((element.id as IRISubjectId).iri))
+  async fetch(client: TripleStore, element: Subject): Promise<Subject> {
+    let quads = await client.fetch(rdfjs.named((element.id as IRISubjectId).iri))
+    this.ingest(element, quads)
+    return element
   }
 
   /**

@@ -156,8 +156,7 @@ export class LocalGraph implements Graph {
     let factory: DMEFactory<any, T> = this.factories[desc.typename]
 
     if (!desc.ready) {
-      let raw = await factory.tripler.fetch(this.client, desc)
-      desc = factory.tripler.ingest(desc, raw)
+      desc = await factory.tripler.fetch(this.client, desc)
     }
     return desc
   }

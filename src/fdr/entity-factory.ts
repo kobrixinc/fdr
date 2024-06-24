@@ -25,7 +25,8 @@ class ClassModel {
   private static internal_iri_property = '__fdr__assigned_iri'
   private _attributes: Record<string, AttributeModel> = {}
 
-  iriAttribute: string | undefined
+  typeIri: string | undefined
+  idProperty: string | undefined
   iriFactory: Function | undefined 
   
   relations : RelationModel[] = []
@@ -40,6 +41,10 @@ class ClassModel {
     attributeList.forEach(a => this._attributes[a.name] = a)
   }
 
+  get propertiesWithAttributes(): Array<string> {
+    return Object.keys(this._attributes)
+  }
+
   /**
    * Return the IRI of the property corresponding to a given
    * JavaScript property, assuming that property is an attribute. 
@@ -50,16 +55,16 @@ class ClassModel {
   }
 
   produceIri(entity: object): string {
-    if (this.iriAttribute) {
-      let iri = entity[this.iriAttribute]
+    if (this.idProperty) {
+      let iri = entity[this.idProperty]
       if (!iri) {
         if (this.iriFactory) {
           iri = this.iriFactory(entity)
-          entity[this.iriAttribute] = iri
+          entity[this.idProperty] = iri
         }
         else 
           new Error("IRI attribute of entity + " + entity + " of type " + this.classname
-              + " expected to have an IRI assigned to property " + this.iriAttribute +
+              + " expected to have an IRI assigned to property " + this.idProperty +
             ", but that property is empty and there is no iriFactory provided in the class annotation.")
       }
       return iri
@@ -69,7 +74,7 @@ class ClassModel {
     }
     else if (this.iriFactory) {
       let iri = this.iriFactory(entity)
-      entity[this.iriAttribute ? this.iriAttribute : ClassModel.internal_iri_property] = iri
+      entity[this.idProperty ? this.idProperty : ClassModel.internal_iri_property] = iri
       return iri
     }
     else 
@@ -85,6 +90,10 @@ class ClassModel {
 
 type Constructor = new (...args: any[]) => {};
 
+enum EntityLifecycle {
+  constructed = 0, populated // maybe others down the road
+}
+
 function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
   const custom = Base.name + "_as_FDR_Entity"
   type NewType = Constructor & DataSpec<NewType>
@@ -96,6 +105,7 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
 
     private __fdr__model: ClassModel
     private __fdr__changes: Array<PropertyChange> = []
+    private __fdr__lifecycle: EntityLifecycle = EntityLifecycle.constructed
 
     private __track_changes(key: string) {
       let self = this
@@ -113,7 +123,7 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
 
       const getter = property.get
       const setter = property.set
-      
+
       let def = {
         enumerable: true,
         configurable: true,
@@ -126,8 +136,10 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
           let oldVal = getter ? getter.call(this) : val
           if (setter) setter.call(this, newVal)
           else val = newVal
-          let change = new PropertyReplaced(propIri, oldVal, newVal)
-          self.__fdr__changes.push(change)
+          if (self.__fdr__lifecycle != EntityLifecycle.constructed) {
+            let change = new PropertyReplaced(propIri, oldVal, newVal)
+            self.__fdr__changes.push(change)
+          }
         }
       }
       Object.defineProperty(this, key, def)
@@ -188,8 +200,11 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
      /**
      * Whether this dataspec is ready to use
      */
-    ready:boolean  = false   
+    get ready(): boolean {
+      return this.__fdr__lifecycle != EntityLifecycle.constructed
+    }
   }}
+
   return MixedClass
 }
 
@@ -201,18 +216,32 @@ function nextClass() {
 }
 nextClass()
 
-class EntityTripler implements Tripler<any, Quads> {
+class EntityTripler implements Tripler<object, Quads> {
 
   constructor(readonly graph: Graph, readonly classModel: ClassModel) { 
 
   }
 
-  async fetch(client: TripleStore, element: any): Promise<Quads> {
+  async fetch(client: TripleStore, element: object): Promise<object> {
+    let pattern = {
+      "@type": this.classModel.typeIri,
+      "@id": this.classModel.produceIri(element)
+    }
     
-    return client.fetch(rdfjs.named("htp://todo.org"))
-  }
+    this.classModel.propertiesWithAttributes.forEach(prop => {
+      let attr = this.classModel.attributeFor(prop)
+      pattern[attr!.iri] = null
+    })
 
-  ingest(element: any, rawdata: Quads): any {
+    let matches = await client.match(pattern)
+    if (matches.length > 0) {
+      let data = matches[0]
+      this.classModel.propertiesWithAttributes.forEach(prop => {
+        let attr = this.classModel.attributeFor(prop)
+        element[prop] = data[attr!.iri]
+      })
+    }
+    element['__fdr__lifecycle'] = EntityLifecycle.populated
     return element
   }
 }
@@ -241,15 +270,20 @@ class EntityFactory implements DMEFactory<IRISubjectId, any> {
       id = this.classModel.iriFactory()
     }
     let result = new (<any> this.classModel.javascriptClass)(this.classModel, id)
+    if (this.classModel.idProperty)
+      result[this.classModel.idProperty] = id
     return new AnnotatedDomainElement(iri, result)
   }
 }
 
-const entity = (spec: Object) => {
+export const entity = (spec: EntitySpec) => {
   return (target: Constructor) => {
     let classModel = new ClassModel()    
+    classModel.typeIri = spec.type
     const finalClass = WithEntityDataSpec(target)
     classModel.javascriptClass = finalClass
+    if (spec.idProperty)
+      classModel.idProperty = spec.idProperty
     classModel.attributes = metadata['undefined']['attributes']
     classModel.relations = metadata['undefined']['relations']
     metadata[target.name] = classModel    
@@ -265,17 +299,18 @@ const entity = (spec: Object) => {
   }
 }
 
-type AttributeSpec = {type: string}
+type EntitySpec = {type: string, iriFactory?: Function, idProperty?: string }
+type AttributeSpec = {type: string, iri: string}
 type RelationSpec = {}
 
-function attribute(spec: AttributeSpec)  {
+export function attribute(spec: AttributeSpec)  {
   return function (target: any, key: string): void {
     console.log('attribute decorator', spec, target, key)
-    metadata['undefined']['attributes'].push(new AttributeModel(key, "http://test.org/" + key))
+    metadata['undefined']['attributes'].push(new AttributeModel(key, spec.iri))
   }
 }
 
-function relation(spec: RelationSpec) {
+export function relation(spec: RelationSpec) {
   return function (target: any, key: string): void {
     console.log('attribute decorator', spec, target, key)
     metadata['undefined']['relations'].push(new RelationModel(key, "http://test.org/" + key))
@@ -287,11 +322,11 @@ function relation(spec: RelationSpec) {
   type: "http://foaf.org/Person"
 })
 class Address {
-  @attribute({type: 'xsd:string'})
+  @attribute({type: 'xsd:string', iri: "http://example.org/street"})
   street: string = ''
-  @attribute({type: 'xsd:string'})
+  @attribute({type: 'xsd:string', iri: "http://example.org/city"})
   city: string = ''
-  @attribute({type: 'xsd:string'})
+  @attribute({type: 'xsd:string', iri: "http://example.org/id"})
   id: string = ''
 
   constructor(id: string) {
@@ -304,7 +339,7 @@ class Address {
   type: "http://foaf.org/Person"
 })
 class Person {
-  @attribute({type:'xsd:integer'})
+  @attribute({type:'xsd:integer', iri: "http://example.org/mynum"})
   mynum : number
   @relation({})
   address: Array<Address> = []
