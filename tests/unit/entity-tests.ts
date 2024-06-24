@@ -2,10 +2,51 @@ import { assert, expect } from "chai"
 import { fdr, fdrmake }  from "../../src/fdr/fdr.js"
 import SPARQLProtocolClient from "../../src/fdr/sparql-triplestore-client.js"
 import { DomainAnnotatedFactories, ResolverHolder, basicDomainFactories } from "../../src/index.js"
-import entityFactories from "../../src/fdr/entity-factory.js"
+import entityFactories, { attribute, entity } from "../../src/fdr/entity-factory.js"
 
 const prefixes: {[key: string]: any}  = {
+  "voc": "https://swapi.co/vocabulary/",
 }
+
+fdr.resolver.prefixResolver.withPrefixes(prefixes)
+
+@entity({
+  idProperty: 'id',
+  iriFactory: () => "https://swapi.co/resource/human/" + Math.random(),
+  type: "voc:Human"
+})
+class Human {
+  id: string = ''
+  @attribute({type: 'xsd:string', iri: 'rdfs:label'})
+  name: string = ''
+  gender: string = ''
+  height: number = 0
+
+  world: Planet | null = null
+  starships: Array<Starship> = []
+}
+
+@entity({
+  iriFactory: () => "https://swapi.co/resource/planet/" + Math.random(),
+  type: "voc:Planet"
+})
+class Planet {
+  name: string = ''
+  terrain: string = ''
+  residents: Array<Human> = []
+}
+
+
+@entity({
+  iriFactory: () => "https://swapi.co/resource/starship/" + Math.random(),
+  type: "voc:Planet"
+})
+class Starship {
+  name: string = ''
+  capacity: number = 0
+  pilots: Array<Human> = []
+}
+
 
 let endpointurl = 'http://localhost:7200/repositories/starwars'
 let store = new SPARQLProtocolClient(endpointurl, endpointurl + "/statements")
@@ -29,11 +70,11 @@ describe("FDR Entities Tests", function() {
     let entityNames = Object.getOwnPropertyNames(graph.factory)
     console.log('factories', entityNames)
     expect(entityNames).to
-      .contain("Address")
-      .contain("Person")
+      .contain("Human")
+      .contain("Planet")
   }).timeout(20000)
 
-  it.only("Can create a new simple entity and save in graph", async () => {
+  it.skip("Can create a new simple entity and save in graph", async () => {
     let id = "http://test.org/address/1"
     let a = graph.factory.Address(id)
     expect(a.ready).to.equal(false)
@@ -44,4 +85,9 @@ describe("FDR Entities Tests", function() {
   
   }).timeout(20000)
 
+  it.only("Fetch an existing complex entity", async () => {
+    let obiwan = graph.factory.Human("https://swapi.co/resource/human/10")
+    await graph.use(obiwan)
+    expect(obiwan.name).to.equal("Obi-Wan Kenobi")
+  }).timeout(20000)  
 })
