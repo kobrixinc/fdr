@@ -2,7 +2,7 @@ import { assert, expect } from "chai"
 import { fdr, fdrmake }  from "../../src/fdr/fdr.js"
 import SPARQLProtocolClient from "../../src/fdr/sparql-triplestore-client.js"
 import { DomainAnnotatedFactories, ResolverHolder, basicDomainFactories } from "../../src/index.js"
-import entityFactories, { attribute, entity } from "../../src/fdr/entity-factory.js"
+import entityFactories, { attribute, entity, relation } from "../../src/fdr/entity-factory.js"
 
 const prefixes: {[key: string]: any}  = {
   "voc": "https://swapi.co/vocabulary/",
@@ -19,28 +19,35 @@ class Human {
   id: string = ''
   @attribute({type: 'xsd:string', iri: 'rdfs:label'})
   name: string = ''
+  @attribute({type: 'xsd:string', iri: 'voc:gender'})
   gender: string = ''
+  @attribute({type: 'xsd:decimal', iri: 'voc:height'})
   height: number = 0
 
+  @relation({type: 'voc:Planet', iri: 'voc:homeworld'})
   world: Planet | null = null
+  // @relation({type: 'voc:Starship', iri: 'voc:starship'})
   starships: Array<Starship> = []
 }
 
 @entity({
+  idProperty: 'id',
   iriFactory: () => "https://swapi.co/resource/planet/" + Math.random(),
   type: "voc:Planet"
 })
 class Planet {
+  id: string = ''
+  @attribute({type: 'xsd:string', iri: 'rdfs:label'})
   name: string = ''
+  @attribute({type: 'xsd:string', iri: 'voc:terrain'})
   terrain: string = ''
   residents: Array<Human> = []
 }
 
-
-@entity({
-  iriFactory: () => "https://swapi.co/resource/starship/" + Math.random(),
-  type: "voc:Planet"
-})
+// @entity({
+//   iriFactory: () => "https://swapi.co/resource/starship/" + Math.random(),
+//   type: "voc:Starship"
+// })
 class Starship {
   name: string = ''
   capacity: number = 0
@@ -87,7 +94,9 @@ describe("FDR Entities Tests", function() {
 
   it.only("Fetch an existing complex entity", async () => {
     let obiwan = graph.factory.Human("https://swapi.co/resource/human/10")
+    obiwan.name = "Dart Vader"
     await graph.use(obiwan)
     expect(obiwan.name).to.equal("Obi-Wan Kenobi")
+    expect(obiwan.world.name).to.equal("Stewjon")
   }).timeout(20000)  
 })

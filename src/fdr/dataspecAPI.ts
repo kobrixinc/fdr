@@ -8,6 +8,8 @@ This module contains all the types the user needs in order to interact with
 FDR. 
 */
 
+export type Constructor = new (...args: any[]) => {}
+
 /**
  * A description of some data. Could be simply a reference, e.g. URI
  * or a query or some other form of a specification what the data is. 
@@ -257,7 +259,7 @@ export class AnnotatedDomainElement<IdType, ElementType> {
   }  
 }
 
-export interface Tripler<ElementType, RawData> {
+export interface Tripler<ElementType> {
 
   /**
    * 
@@ -286,7 +288,7 @@ export interface DMEFactory<IdType, ElementType extends DataSpec<ElementType>> {
   /**
    * Return the class of elements this factory produces.
    */
-  get elementType(): Function
+  get elementType(): new(...args: Array<any>)=>any // Constructor
 
   /**
    * Create just the identifier out of the arguments normally
@@ -304,7 +306,7 @@ export interface DMEFactory<IdType, ElementType extends DataSpec<ElementType>> {
    */
   make(...args): AnnotatedDomainElement<IdType, ElementType>
 
-  get tripler(): Tripler<ElementType, any> 
+  get tripler(): Tripler<ElementType> 
 }
 
 /**
@@ -319,11 +321,11 @@ export type DMEFactoryConstructor<IdType, ElementType extends DataSpec<ElementTy
 export abstract class DMEFactoryImpl<IdType, ElementType extends DataSpec<ElementType> > 
   implements DMEFactory<IdType, ElementType> {
     constructor(
-      readonly elementType: Function, 
+      readonly elementType: Constructor, 
       readonly identify: (...args) => IdType,
       readonly make: (...args) => AnnotatedDomainElement<IdType, ElementType>) 
     {}
-    abstract get tripler(): Tripler<ElementType, any>
+    abstract get tripler(): Tripler<ElementType>
   }
 
 export class DomainAnnotatedFactories {

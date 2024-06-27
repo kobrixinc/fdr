@@ -1,17 +1,17 @@
 import { PropertyChange, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { AnnotatedDomainElement, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, IRISubjectId, Tripler } from "./dataspecAPI.js"  
+import { AnnotatedDomainElement, Constructor, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, IRISubjectId, Tripler } from "./dataspecAPI.js"  
 import { rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { Quads, TripleStore } from "./triplestore-client.js"
 class AttributeModel {
   constructor(readonly name: string, readonly iri: string) {
-    console.log('created an attribute', name, iri)
+    // console.log('created an attribute', name, iri)
   }
 }
 
 class RelationModel {
-  constructor(readonly name: string, readonly iri: string) {
-    console.log('created a relation', name, iri)
+  constructor(readonly name: string, readonly entityType: string, readonly iri: string) {
+    // console.log('created a relation', name, iri)
   }
 }
 
@@ -24,12 +24,11 @@ class ClassModel {
   private static object_class = new Function()
   private static internal_iri_property = '__fdr__assigned_iri'
   private _attributes: Record<string, AttributeModel> = {}
+  private _relations : Record<string, RelationModel> = {}
 
   typeIri: string | undefined
   idProperty: string | undefined
   iriFactory: Function | undefined 
-  
-  relations : RelationModel[] = []
   
   javascriptClass: Function = ClassModel.object_class
  
@@ -41,8 +40,16 @@ class ClassModel {
     attributeList.forEach(a => this._attributes[a.name] = a)
   }
 
+  set relations(relationList: RelationModel[]) {
+    relationList.forEach(a => this._relations[a.name] = a)
+  }
+
   get propertiesWithAttributes(): Array<string> {
     return Object.keys(this._attributes)
+  }
+
+  get propertiesWithRelations(): Array<string> {
+    return Object.keys(this._relations)
   }
 
   /**
@@ -52,6 +59,23 @@ class ClassModel {
    */
   attributeFor(name: string): AttributeModel | undefined {
     return this._attributes[name]
+  }
+
+  relationFor(name: string): RelationModel | undefined {
+    return this._relations[name]
+  }
+
+  relatedModel(prop: string): ClassModel | undefined {
+    // Need a more solid and a better defined version of this
+    // Might need an extra attribute of the @relation deocarator
+    // to specify the typename
+    let rel = this.relationFor(prop)
+    let result: ClassModel | undefined
+    Object.values(types).forEach(m => {
+      if (m.typeIri == rel?.entityType)
+        result = m
+    })
+    return result
   }
 
   produceIri(entity: object): string {
@@ -87,8 +111,6 @@ class ClassModel {
     return amodel && amodel.iri
   }
 }
-
-type Constructor = new (...args: any[]) => {};
 
 enum EntityLifecycle {
   constructed = 0, populated // maybe others down the road
@@ -133,6 +155,8 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
           return getter ? getter.call(this) : val
         },
         set: function fdrTrackingSetter(newVal) {
+          // if (!self.ready)
+          //   throw new Error("Entity " + self.toString() + " not ready for us, please call `Graph.use()` beforehand.")
           let oldVal = getter ? getter.call(this) : val
           if (setter) setter.call(this, newVal)
           else val = newVal
@@ -210,14 +234,58 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
 
 let metadata: { 'undefined': any} = {'undefined': null}
 let make: Record<string, DMEFactoryConstructor<any, any>> = {}
+let types: Record<string, ClassModel> = {}
 
 function nextClass() {
   metadata['undefined'] = { 'attributes': [], 'relations' : []}
 }
 nextClass()
 
-class EntityTripler implements Tripler<object, Quads> {
+class EntityTripler implements Tripler<object> {
 
+  private formulatePattern(model: ClassModel, pattern: object): void {
+    model.propertiesWithAttributes.forEach(prop => {
+      let attr = model.attributeFor(prop)
+      if (!attr) {
+        throw new Error("No attribute found for property " + prop + " of " + model.classname)
+      }
+      pattern[attr.iri] = null
+    })
+
+    model.propertiesWithRelations.forEach(prop => {
+      // let rel = this.classModel.relationFor(prop)
+      let nestedModel = model.relatedModel(prop)
+      let rel = model.relationFor(prop)
+      if (!nestedModel || !rel) {
+        throw new Error("No ClassModel found for property " + prop + " of " + model.classname)
+      }
+      let nestedPattern = {
+        "@type": nestedModel?.typeIri,
+        "@id": null
+      }      
+      this.formulatePattern(nestedModel!, nestedPattern)
+      pattern[rel?.iri] = nestedPattern
+    })    
+  }
+
+  private populateFromResult(element: object, model: ClassModel, data: object): void {
+    model.propertiesWithAttributes.forEach(prop => {
+      let attr = model.attributeFor(prop)
+      element[prop] = data[attr!.iri]
+    })
+    model.propertiesWithRelations.forEach(prop => {
+      let rel = model.relationFor(prop)!
+      let nested = data[rel.iri]
+      let nestedId = data[rel.iri]['@id'] 
+      let typename = types[rel.entityType].classname // Object.keys(types).find(key => types[key].typeIri == rel.entityType)     
+      let nestedElement = this.graph.factory[typename!](nestedId)
+      if (nestedElement.ready) {
+        // do we skip populating here from result?
+      }
+      this.populateFromResult(nestedElement, model.relatedModel(prop)!, nested)
+    })
+  }
+  
   constructor(readonly graph: Graph, readonly classModel: ClassModel) { 
 
   }
@@ -227,19 +295,13 @@ class EntityTripler implements Tripler<object, Quads> {
       "@type": this.classModel.typeIri,
       "@id": this.classModel.produceIri(element)
     }
-    
-    this.classModel.propertiesWithAttributes.forEach(prop => {
-      let attr = this.classModel.attributeFor(prop)
-      pattern[attr!.iri] = null
-    })
+
+    this.formulatePattern(this.classModel, pattern)
 
     let matches = await client.match(pattern)
     if (matches.length > 0) {
       let data = matches[0]
-      this.classModel.propertiesWithAttributes.forEach(prop => {
-        let attr = this.classModel.attributeFor(prop)
-        element[prop] = data[attr!.iri]
-      })
+      this.populateFromResult(element, this.classModel, data)
     }
     element['__fdr__lifecycle'] = EntityLifecycle.populated
     return element
@@ -249,9 +311,9 @@ class EntityTripler implements Tripler<object, Quads> {
 class EntityFactory implements DMEFactory<IRISubjectId, any> {
 
   classModel: ClassModel
-  readonly tripler: Tripler<any, Quads>
+  readonly tripler: Tripler<any>
   
-  constructor(readonly elementType: Function, 
+  constructor(readonly elementType: Constructor, 
               readonly classModelBase: ClassModel,
               readonly graph: Graph) {
     this.classModel = Object.create(classModelBase)
@@ -287,6 +349,7 @@ export const entity = (spec: EntitySpec) => {
     classModel.attributes = metadata['undefined']['attributes']
     classModel.relations = metadata['undefined']['relations']
     metadata[target.name] = classModel    
+    types[spec.type] = classModel
 
     Object.defineProperty(make, target.name, {
       enumerable: true,
@@ -301,7 +364,7 @@ export const entity = (spec: EntitySpec) => {
 
 type EntitySpec = {type: string, iriFactory?: Function, idProperty?: string }
 type AttributeSpec = {type: string, iri: string}
-type RelationSpec = {}
+type RelationSpec = {type: string, iri: string}
 
 export function attribute(spec: AttributeSpec)  {
   return function (target: any, key: string): void {
@@ -313,43 +376,43 @@ export function attribute(spec: AttributeSpec)  {
 export function relation(spec: RelationSpec) {
   return function (target: any, key: string): void {
     console.log('attribute decorator', spec, target, key)
-    metadata['undefined']['relations'].push(new RelationModel(key, "http://test.org/" + key))
+    metadata['undefined']['relations'].push(new RelationModel(key, spec.type, spec.iri))
   }  
 }
 
-@entity({
-  iriFactory: () => "http://foaf.org/address/" + Math.random(),
-  type: "http://foaf.org/Person"
-})
-class Address {
-  @attribute({type: 'xsd:string', iri: "http://example.org/street"})
-  street: string = ''
-  @attribute({type: 'xsd:string', iri: "http://example.org/city"})
-  city: string = ''
-  @attribute({type: 'xsd:string', iri: "http://example.org/id"})
-  id: string = ''
+// @entity({
+//   iriFactory: () => "http://foaf.org/address/" + Math.random(),
+//   type: "http://foaf.org/Person"
+// })
+// class Address {
+//   @attribute({type: 'xsd:string', iri: "http://example.org/street"})
+//   street: string = ''
+//   @attribute({type: 'xsd:string', iri: "http://example.org/city"})
+//   city: string = ''
+//   @attribute({type: 'xsd:string', iri: "http://example.org/id"})
+//   id: string = ''
 
-  constructor(id: string) {
-    this.id = id;
-  }
-}
+//   constructor(id: string) {
+//     this.id = id;
+//   }
+// }
 
-@entity({
-  iriFactory: () => "http://foaf.org/person/" + Math.random(),
-  type: "http://foaf.org/Person"
-})
-class Person {
-  @attribute({type:'xsd:integer', iri: "http://example.org/mynum"})
-  mynum : number
-  @relation({})
-  address: Array<Address> = []
+// @entity({
+//   iriFactory: () => "http://foaf.org/person/" + Math.random(),
+//   type: "http://foaf.org/Person"
+// })
+// class Person {
+//   @attribute({type:'xsd:integer', iri: "http://example.org/mynum"})
+//   mynum : number
+//   @relation({type:'foaf:Address', iri:'http://www.example.org/hasAddress'})
+//   address: Array<Address> = []
 
-  constructor(readonly id: string)  {
-    console.log('Person constructor called')
-    this.mynum = Math.random()  
-  }
-  toString(): string { return this.id }
-}
+//   constructor(readonly id: string)  {
+//     console.log('Person constructor called')
+//     this.mynum = Math.random()  
+//   }
+//   toString(): string { return this.id }
+// }
 
 // let p = make.Person()
 // let p1 = p.workingCopy()

@@ -106,9 +106,10 @@ export class Triple {
 export class QueryPattern {
   subject: Node
   triples: Array<Triple> = []
+  related: Record<string, QueryPattern> = {}
 
   constructor(readonly struct: object) { 
-    this.subject = this.struct.hasOwnProperty('@id') 
+    this.subject = this.struct.hasOwnProperty('@id') && this.struct['@id']
     ? new QuerySubject(rdfjs.named(this.struct['@id']).value)
     : Var.make()
   }
@@ -129,7 +130,18 @@ export class QueryPattern {
       else {
         // need to deal with operators here eventually
         pred = new QuerySubject(rdfjs.named(key).value)
-        obj = value ? rdfjs.literal(value) : Var.make()      
+        if (value == null) {
+          obj = Var.make()
+        }
+        else if (typeof value == "object") {
+          obj = Var.make()
+          let nestedPattern = new QueryPattern(value)
+          nestedPattern.subject = obj
+          nestedPattern.patternFromStructure()
+          this.related[pred.iri] = nestedPattern          
+        }
+        else
+          obj = rdfjs.literal(value)
       }
       this.addTriple(this.subject, pred, obj)
     })
@@ -150,15 +162,24 @@ export class QueryPattern {
       result['@id'] = bindings[(this.subject as Var).name].value
     }
     this.triples.forEach(t => {
-      if (!nodeEquals(t.sub, this.subject)) return
-      let propname = fdr.resolver.inverse().resolve((t.pred as QuerySubject).iri)
+      if (!nodeEquals(t.sub, this.subject)) {
+        throw new Error("Unexpected triple with different subject: " + t.sub)
+      }
+      let predicateIri = (t.pred as QuerySubject).iri
+      let nestedPattern = this.related[predicateIri]
+      let propname = fdr.resolver.inverse().resolve(predicateIri)
       let propvalue 
       if (t.obj instanceof Var) {
-        propvalue = bindings[t.obj.name] 
-        if (propvalue.type == "literal")
-          propvalue = propvalue.value
-        else if (propvalue.type == "uri")
-          propvalue = fdr.resolver.inverse().resolve(propvalue.value)
+        if (nestedPattern) {
+          propvalue = nestedPattern.bindingsToMatch(bindings)
+        }
+        else {
+          propvalue = bindings[t.obj.name] 
+          if (propvalue.type == "literal")
+            propvalue = propvalue.value
+          else if (propvalue.type == "uri")
+            propvalue = fdr.resolver.inverse().resolve(propvalue.value)
+        }
       }
       else if (t.obj instanceof QuerySubject)
         propvalue = fdr.resolver.inverse().resolve((t.obj as QuerySubject).iri)
@@ -170,9 +191,17 @@ export class QueryPattern {
     return result
   }
 
+  get allTriples(): Array<Triple> {
+    let result = [...this.triples]
+    Object.values(this.related).forEach(nested => {
+      result.push.apply(result, nested.allTriples)
+    })
+    return result
+  }
+
   toSparql(): string {
     let query = "select * where { \n "
-    this.triples.forEach(t => {
+    this.allTriples.forEach(t => {
       query += t.toString() + "\n"
     })
     query += "}"

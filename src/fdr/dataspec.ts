@@ -1064,7 +1064,7 @@ export class PropertyValueIdentifier implements SubjectId {
   }
 }
 
-class SubjectTripler implements Tripler<Subject, Dataset> {
+class SubjectTripler implements Tripler<Subject> {
 
   constructor(readonly graph: Graph) { }
 
@@ -1137,7 +1137,7 @@ class SubjectTripler implements Tripler<Subject, Dataset> {
 
 export class SubjectAnnotatedFactory implements DMEFactory<SubjectId, Subject> {
   
-  private triplerImpl: Tripler<Subject, Quads>
+  private triplerImpl: Tripler<Subject>
 
   constructor(readonly graph: Graph) {
     this.triplerImpl = new SubjectTripler(graph)
@@ -1158,7 +1158,7 @@ export class SubjectAnnotatedFactory implements DMEFactory<SubjectId, Subject> {
     return res
   }
 
-  get tripler(): Tripler<Subject, Quads> {
+  get tripler(): Tripler<Subject> {
     return this.triplerImpl
   }
 }
