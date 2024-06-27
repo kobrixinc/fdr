@@ -283,7 +283,9 @@ class EntityTripler implements Tripler<object> {
         // do we skip populating here from result?
       }
       this.populateFromResult(nestedElement, model.relatedModel(prop)!, nested)
+      element[prop] = nestedElement
     })
+    element['__fdr__lifecycle'] = EntityLifecycle.populated
   }
   
   constructor(readonly graph: Graph, readonly classModel: ClassModel) { 
