@@ -26,7 +26,7 @@ class Human {
 
   @relation({type: 'voc:Planet', iri: 'voc:homeworld'})
   world: Planet | null = null
-  // @relation({type: 'voc:Starship', iri: 'voc:starship'})
+  @relation({type: 'voc:Starship', iri: 'voc:starship'})
   starships: Array<Starship> = []
 }
 
@@ -44,10 +44,10 @@ class Planet {
   residents: Array<Human> = []
 }
 
-// @entity({
-//   iriFactory: () => "https://swapi.co/resource/starship/" + Math.random(),
-//   type: "voc:Starship"
-// })
+@entity({
+  iriFactory: () => "https://swapi.co/resource/starship/" + Math.random(),
+  type: "voc:Starship"
+})
 class Starship {
   name: string = ''
   capacity: number = 0
@@ -92,11 +92,25 @@ describe("FDR Entities Tests", function() {
   
   }).timeout(20000)
 
+  // Test multi-valued data properties and multi-valued object properties
+  // Test circular structures - with direct circular referecence and indirect ones
+  // Test update propagation:
+  //   1. make a simple update to object and commit
+  //   2. after load of parent structure, get child object directly from cache and update it
+  //      (this means, through a working copy of child)
+  //   3. two structure that just share some triples in some fashion with being parent-child necessarily
+  //      (is that scenario possible?). It
+  //   4. Need to implement and test the "mentions" mechanism. Revisit its reason for being as well.
+  //     Make a convincing argument it is actually needed.
+  //   5. What would it take to change the type of an entity? Can we support that?
   it.only("Fetch an existing complex entity", async () => {
     let obiwan = graph.factory.Human("https://swapi.co/resource/human/10")
-    obiwan.name = "Dart Vader"
     await graph.use(obiwan)
     expect(obiwan.name).to.equal("Obi-Wan Kenobi")
     expect(obiwan.world.name).to.equal("Stewjon")
+    let wc = obiwan.workingCopy()
+    wc.name = "Dart Vader"
+    wc.commit()
+    expect(obiwan.name).to.equal("Dart Vader")
   }).timeout(20000)  
 })

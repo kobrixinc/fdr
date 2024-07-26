@@ -28,13 +28,14 @@
   },
   "homepage": "https://github.com/kobrixinc/fdr#readme",
   "dependencies": {
-    "@tykowale/ts-hash-map": "../../gitclones/ts-hash-map",
     "@rdfjs/data-model": "^2.0.0",
     "@rdfjs/dataset": "^2.0.0",
     "@rdfjs/types": "^1.1.0",
+    "@tykowale/ts-hash-map": "../../gitclones/ts-hash-map",
     "@types/isomorphic-fetch": "^0.0.36",
     "isomorphic-fetch": "^3.0.0",
     "rdf-ext": "^2.2.0",
+    "reflect-metadata": "^0.2.2",
     "subscription": "^3.0.0"
   },
   "devDependencies": {

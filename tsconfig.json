@@ -26,6 +26,7 @@
     "skipLibCheck": true,                                 /* Skip type checking all .d.ts files. */
     "noImplicitAny": false,
     "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,    
     "declaration": true,
     "sourceMap": true,
     /*

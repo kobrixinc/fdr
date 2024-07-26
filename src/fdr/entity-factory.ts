@@ -1,16 +1,23 @@
+import "reflect-metadata"
 import { PropertyChange, PropertyReplaced, QuadChange } from "./changemgmt.js"
 import { AnnotatedDomainElement, Constructor, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, IRISubjectId, Tripler } from "./dataspecAPI.js"  
 import { rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { Quads, TripleStore } from "./triplestore-client.js"
 class AttributeModel {
-  constructor(readonly name: string, readonly iri: string) {
+  constructor(readonly name: string, 
+              readonly datatype: string,
+              readonly iri: string,
+              readonly runtimeType?: object) {
     // console.log('created an attribute', name, iri)
   }
 }
 
 class RelationModel {
-  constructor(readonly name: string, readonly entityType: string, readonly iri: string) {
+  constructor(readonly name: string, 
+              readonly entityType: string, 
+              readonly iri: string,
+              readonly runtimeType?: object) {
     // console.log('created a relation', name, iri)
   }
 }
@@ -59,6 +66,13 @@ class ClassModel {
    */
   attributeFor(name: string): AttributeModel | undefined {
     return this._attributes[name]
+  }
+
+  nameForIRI(iri: string): string | undefined {
+    let attr = Object.values(this._attributes).find(a => a.iri == iri)
+    if (attr) return attr.name
+    let rel =  Object.values(this._relations).find(r => r.iri == iri)
+    if (rel) return rel.name    
   }
 
   relationFor(name: string): RelationModel | undefined {
@@ -113,7 +127,7 @@ class ClassModel {
 }
 
 enum EntityLifecycle {
-  constructed = 0, populated // maybe others down the road
+  constructed = 0, populating, populated // maybe others down the road
 }
 
 function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
@@ -125,11 +139,12 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
   const { [custom]: MixedClass } = { [custom]: 
   class extends Base implements DataSpec<NewType> {
 
-    private __fdr__model: ClassModel
-    private __fdr__changes: Array<PropertyChange> = []
-    private __fdr__lifecycle: EntityLifecycle = EntityLifecycle.constructed
+    protected __fdr__model: ClassModel
+    protected __fdr__super_args: Array<any>    
+    protected __fdr__changes: Array<PropertyChange> = []
+    protected __fdr__lifecycle: EntityLifecycle = EntityLifecycle.constructed
 
-    private __track_changes(key: string) {
+    protected __track_changes(key: string) {
       let self = this
       const property = Object.getOwnPropertyDescriptor(this, key)
       if (!property) return
@@ -155,12 +170,12 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
           return getter ? getter.call(this) : val
         },
         set: function fdrTrackingSetter(newVal) {
-          // if (!self.ready)
-          //   throw new Error("Entity " + self.toString() + " not ready for us, please call `Graph.use()` beforehand.")
+          if (!self.ready && self.__fdr__lifecycle != EntityLifecycle.populating)
+            throw new Error("Entity " + self.toString() + " not ready for us, please call `Graph.use()` beforehand.")
           let oldVal = getter ? getter.call(this) : val
           if (setter) setter.call(this, newVal)
           else val = newVal
-          if (self.__fdr__lifecycle != EntityLifecycle.constructed) {
+          if (self.__fdr__lifecycle == EntityLifecycle.populated) {
             let change = new PropertyReplaced(propIri, oldVal, newVal)
             self.__fdr__changes.push(change)
           }
@@ -181,8 +196,31 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
       return this.__fdr__model['graph']
     }
 
+    protected __fdr__applyChanges(changes: Array<PropertyChange>) {
+      let self = this
+      function applyOne(change: PropertyChange) {
+        if (change instanceof PropertyReplaced) {
+          let name = self.__fdr__model.nameForIRI(change.name)
+          if (name)
+            self[name] = change.newvalue
+          else {
+            console.log('No entity property for IRI in change object', change)
+            throw new Error("Cannot find property for IRI " + change.name)
+          }
+        }
+        else {
+          console.log("Unexpected property change.", change)
+          throw new Error("Unexpected property change for a strongly typed entity: " + change)
+        }
+      }
+      changes.forEach(applyOne)
+    }
+
+    // Fist argument is the model (ClassModel) and therest
+    // is whatever the base class needs, however it's defined
     constructor(...args: any[]) {
       super(...args.slice(1))
+      this.__fdr__super_args = args.slice(1)
       this.__fdr__model = args[0]
       this.__fdr__prepare()
     }
@@ -193,7 +231,15 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
 
     workingCopy(reactivityDecoratorFunction? : <T extends NewType>(T) => T) : NewType {
       // console.log('creating a working copy')
-      return new (<any>MixedClass)()
+      let copy = new WorkingCopy(this) //new (<any>MixedClass)(this.__fdr__model, this.__fdr__super_args)
+      copy.__fdr__lifecycle = EntityLifecycle.populating
+      const keys = Object.keys(this)
+      for (let i = 0; i < keys.length; i++) {
+        if (this.__fdr__model.attributeFor(keys[i]))
+          copy[keys[i]] = this[keys[i]]
+      }
+      copy.__fdr__lifecycle = EntityLifecycle.populated
+      return copy as unknown as NewType
     }
 
     /**
@@ -229,9 +275,31 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
     }
   }}
 
+  class WorkingCopy extends MixedClass  {
+
+    private readonly __fdr__parent
+
+    constructor(...args: any[]) {
+      let parent = args[0]
+      super(parent['__fdr__model'], parent['__fdr__super_args'])
+      this.__fdr__parent = parent
+    }
+
+    workingCopy(reactivityDecoratorFunction? : <T extends NewType>(T) => T) : NewType {
+        return new WorkingCopy(this) as unknown as NewType
+    }
+    
+    get ready() { return true }
+
+    async commit() : Promise<void>  {
+      this.__fdr__parent.__fdr__applyChanges(this.__fdr__changes)
+    }
+  }
+
   return MixedClass
 }
 
+ 
 let metadata: { 'undefined': any} = {'undefined': null}
 let make: Record<string, DMEFactoryConstructor<any, any>> = {}
 let types: Record<string, ClassModel> = {}
@@ -269,6 +337,7 @@ class EntityTripler implements Tripler<object> {
   }
 
   private populateFromResult(element: object, model: ClassModel, data: object): void {
+    element['__fdr__lifecycle'] = EntityLifecycle.populating        
     model.propertiesWithAttributes.forEach(prop => {
       let attr = model.attributeFor(prop)
       element[prop] = data[attr!.iri]
@@ -283,7 +352,16 @@ class EntityTripler implements Tripler<object> {
         // do we skip populating here from result?
       }
       this.populateFromResult(nestedElement, model.relatedModel(prop)!, nested)
-      element[prop] = nestedElement
+      if (rel.runtimeType && rel.runtimeType['name'] == "Array") {
+        if (typeof element[prop] == "undefined")
+          element[prop] = [nestedElement]
+        else if (Array.isArray(element[prop]))
+          element[prop].push(nestedElement)
+        else
+          element[prop] = [element[prop], nestedElement]
+      } 
+      else     
+        element[prop] = nestedElement
     })
     element['__fdr__lifecycle'] = EntityLifecycle.populated
   }
@@ -300,11 +378,14 @@ class EntityTripler implements Tripler<object> {
 
     this.formulatePattern(this.classModel, pattern)
 
-    let matches = await client.match(pattern)
-    if (matches.length > 0) {
-      let data = matches[0]
+    let matches = await client.match(pattern)        
+    matches.forEach(data => {
       this.populateFromResult(element, this.classModel, data)
-    }
+    })
+    // if (matches.length > 0) {
+    //   let data = matches[0]
+    //   this.populateFromResult(element, this.classModel, data)
+    // }
     element['__fdr__lifecycle'] = EntityLifecycle.populated
     return element
   }
@@ -371,14 +452,15 @@ type RelationSpec = {type: string, iri: string}
 export function attribute(spec: AttributeSpec)  {
   return function (target: any, key: string): void {
     console.log('attribute decorator', spec, target, key)
-    metadata['undefined']['attributes'].push(new AttributeModel(key, spec.iri))
+    metadata['undefined']['attributes'].push(new AttributeModel(key, spec.type, spec.iri))
   }
 }
 
 export function relation(spec: RelationSpec) {
   return function (target: any, key: string): void {
-    console.log('attribute decorator', spec, target, key)
-    metadata['undefined']['relations'].push(new RelationModel(key, spec.type, spec.iri))
+    var runtimeType  = Reflect.getMetadata("design:type", target, key)
+    console.log(`Relation ${key} type: ${runtimeType}`);    
+    metadata['undefined']['relations'].push(new RelationModel(key, spec.type, spec.iri, runtimeType))
   }  
 }
 
