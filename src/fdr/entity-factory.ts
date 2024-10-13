@@ -312,6 +312,7 @@ nextClass()
 class EntityTripler implements Tripler<object> {
 
   private formulatePattern(model: ClassModel, pattern: object): void {
+    
     model.propertiesWithAttributes.forEach(prop => {
       let attr = model.attributeFor(prop)
       if (!attr) {

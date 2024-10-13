@@ -41,6 +41,7 @@ class Planet {
   name: string = ''
   @attribute({type: 'xsd:string', iri: 'voc:terrain'})
   terrain: string = ''
+  @relation({type: 'voc:Human', iri: 'voc:resident'})
   residents: Array<Human> = []
 }
 
@@ -112,5 +113,9 @@ describe("FDR Entities Tests", function() {
     wc.name = "Dart Vader"
     wc.commit()
     expect(obiwan.name).to.equal("Dart Vader")
+    // Wolrd Stewjon should be available in cache on its own:
+    let stewjon = graph.factory.Planet("https://swapi.co/resource/planet/20")
+    expect(stewjon.name).to.equal("Stewjon")
+    expect(stewjon.residents).to.be.an('array').that.contains(obiwan)
   }).timeout(20000)  
 })
