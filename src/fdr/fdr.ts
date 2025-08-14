@@ -25,19 +25,30 @@ export interface FDRConfig {
   lang: string | undefined 
 }
 
+/**
+ *  
+ */
 export interface FDR {
   subjectId(name: string): SubjectId
   graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph
   config: FDRConfig
 }
 
+/**
+ * Dynamically extend by adding the functionality defined 
+ * by the FDR interface with meaningful defaults
+ * 
+ * This can be replaced by a simple subclass but we
+ * chose this for style
+ * 
+ */
 function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: TBase) {
-  return class DefaultFDR extends Base implements FDR {
+  return class extends Base implements FDR {
     subjectId(name: string): SubjectId {
       return new IRISubjectId(this.resolver.resolve(name))
     }  
     graph(graphSpecification: {store: TripleStore, id? : string, label? : string }): Graph {
-      let localgraph = new LocalGraph(this, graphSpecification.store, "", "")
+      let localgraph = new LocalGraph(this, graphSpecification.store, graphSpecification.id || "", graphSpecification.label || "")
       return localgraph
     }  
 
@@ -46,7 +57,6 @@ function DefaultFDR<TBase extends new (...args: any[]) => ResolverHolder>(Base: 
     }
   }
 }
-
 
 
 export interface RDFJS {
@@ -67,6 +77,13 @@ export interface RDFJS {
   metaQuad(x: Quad, y: NamedNode, z: Quad|NamedNode|Literal, g?: Quad_Graph): Quad
 }
 
+/**
+ * Dynamically extend by adding the functionality defined 
+ * by the RDFJS interface
+ 
+ * This can be replaced by a simple subclass but we
+ * chose this for style
+ */
 function DefaultRDFJS<TBase extends new (...args: any[]) => WithResolver>(Base: TBase) {
   return class DefaultRDFJS extends Base implements RDFJS {
     named(iri: string) { 
@@ -112,11 +129,14 @@ export type { Subject } from "./dataspecAPI.js"
 export * from "./triplestore-client.js"
 export * from "./graph.js"
 
-class BaseGraphEnvFacade extends ResolverHolder {
-  // resolver: DefaultNameResolver = resolvers.default()
-}
+// class BaseGraphEnvFacade extends ResolverHolder {
+// }
 
-const GraphEnvFacade = DefaultFDR(DefaultRDFJS(BaseGraphEnvFacade))
+/*
+Common facade for the fdr, rdfjs and resolverholder interfaces
+*/
+const GraphEnvFacade = DefaultFDR(DefaultRDFJS(ResolverHolder))
+
 /**
  * An environment which hosts multiple related graphs and contains state 
  * which should be shared between those graphs e.g. prefixes, default
@@ -127,8 +147,17 @@ const GraphEnvFacade = DefaultFDR(DefaultRDFJS(BaseGraphEnvFacade))
  */
 export type GraphEnvironment = FDR & WithResolver 
 
+/**
+ * Facade which combines the APIs of 
+ * 1. RDFJS (for creating RDFJS objects)
+ * 2. ResolverHolder (if the user needs the resolvers)
+ * 3. and FDR
+ */
 export const fdr: FDR & RDFJS & ResolverHolder = new GraphEnvFacade()
 
+/**
+ * factory for creating rdfjs objects 
+ */
 export class rdfjs {
 
   /*
