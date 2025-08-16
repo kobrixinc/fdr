@@ -31,13 +31,13 @@
     "@rdfjs/dataset": "^2.0.0"
   },
   "dependencies": {
-    "@rdfjs/types": "^1.1.0",
     "@types/isomorphic-fetch": "^0.0.36",
     "isomorphic-fetch": "^3.0.0",
     "rdf-ext": "^2.2.0",
     "subscription": "^3.0.0"
   },
   "devDependencies": {
+    "@rdfjs/types": "^1.1.0",
     "@rdfjs/data-model": "^2.0.0",
     "@rdfjs/dataset": "^2.0.0",
     "@types/chai": "^4.3.4",
