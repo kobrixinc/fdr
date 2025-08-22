@@ -6,6 +6,7 @@ import { TripleStore } from "./triplestore-client.js"
 import { rdfjs, GraphEnvironment } from "./fdr.js"
 import { Dataset, Quad } from "@rdfjs/types"
 import { HashMap } from "@tykowale/ts-hash-map"
+import { Hashing } from "../utils.js"
 /**
  * A Graph is a collection of Subjects, each with their properties.
  * 
@@ -56,7 +57,11 @@ export class LocalGraph implements Graph {
   // https://github.com/tykowale/ts-hash-map 
   // assuming it gets a hashCode+equals style support, in addition
   // to the clever stuff it's already doing with well-known JS types.
-  private cache = new HashMap<DomainElementId<any>, DataSpec<any>>()
+  private cache_options = { 
+    hashFn: Hashing.hashIt, 
+    equalsFn: Hashing.equals
+  } 
+  private cache = new HashMap<DomainElementId<any>, DataSpec<any>>(this.cache_options)
 
   private factory_functions = {
     'subject': this.factoryInGraphContext(new SubjectAnnotatedFactory(this))
@@ -124,7 +129,7 @@ export class LocalGraph implements Graph {
   }
   
   clear() {
-    this.cache = new HashMap<DomainElementId<any>, DataSpec<any>>() 
+    this.cache = new HashMap<DomainElementId<any>, DataSpec<any>>(this.cache_options) 
   }
 
   /**

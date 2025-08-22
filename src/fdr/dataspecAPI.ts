@@ -1,7 +1,7 @@
 //import { Literal } from "@rdfjs/types"
+import { Hashing } from "../utils.js"
 import { PropertyChange } from "./changemgmt.js"
 import { LiteralValue, LiteralStruct, Graph, TripleStore } from "./fdr.js"
-import { getHashCode } from "@tykowale/ts-hash-map"
 
 /*
 This module contains all the types the user needs in order to interact with
@@ -110,7 +110,7 @@ export class IRISubjectId implements SubjectId {
   constructor(readonly iri: string){}
 
   hashCode(): number {
-    return getHashCode(this.iri)    
+    return Hashing.hashString(this.iri)
   }
 
   toString(): string {

@@ -1,9 +1,10 @@
 import "reflect-metadata"
 import { PropertyChange, PropertyReplaced, QuadChange } from "./changemgmt.js"
 import { AnnotatedDomainElement, Constructor, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, IRISubjectId, Tripler } from "./dataspecAPI.js"  
-import { rdfjs } from "./fdr.js"
+import { fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { Quads, TripleStore } from "./triplestore-client.js"
+import { QuerySubject, Triple, Var } from "./sparql-triplestore-client.js"
 class AttributeModel {
   constructor(readonly name: string, 
               readonly datatype: string,
@@ -126,10 +127,14 @@ class ClassModel {
   }
 }
 
+// We need this to manage when to track object changes and when not
 enum EntityLifecycle {
   constructed = 0, populating, populated // maybe others down the road
 }
 
+// This is where the magic of turning a class into managed domain entity
+// tracking changes, mapping to/from RDF, clong working copies etc. 
+// happens.
 function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
   const custom = Base.name + "_as_FDR_Entity"
   type NewType = Constructor & DataSpec<NewType>
@@ -365,13 +370,36 @@ class EntityTripler implements Tripler<object> {
         element[prop] = nestedElement
     })
     element['__fdr__lifecycle'] = EntityLifecycle.populated
-  }
-  
+  }    
+
   constructor(readonly graph: Graph, readonly classModel: ClassModel) { 
 
   }
 
   async fetch(client: TripleStore, element: object): Promise<object> {
+    let model = this.classModel
+    let subjectVar = Var.make()
+    let triples: Array<Triple> = []
+    model.propertiesWithAttributes.forEach(prop => {
+      let attr = model.attributeFor(prop)
+      if (!attr) {
+        throw new Error("No attribute found for property " + prop + " of " + model.classname)
+      }
+      let attrVar = Var.make()
+      let t = new Triple(subjectVar, QuerySubject.make(attr.iri), attrVar)
+      triples.push(t)
+    })
+
+    let query = `
+      select * where {\n
+      ${triples.join(".\n")}
+      \n}
+    `
+    console.log("Query to execute", query)
+    return element
+  }
+
+  async fetch2(client: TripleStore, element: object): Promise<object> {
     let pattern = {
       "@type": this.classModel.typeIri,
       "@id": this.classModel.produceIri(element)

@@ -1,13 +1,12 @@
 /* eslint-disable no-prototype-builtins */
 import { BlankNode, Dataset, Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Variable } from "@rdfjs/types"
-import { asArray } from "../utils.js"
+import { asArray, Hashing } from "../utils.js"
 import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
 import { LiteralStruct, LiteralValue, fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { DatasetIngester, Quads, TripleStore } from "./triplestore-client.js"
 import { Subject, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId, AnnotatedDomainElement, DMEFactory, DomainAnnotatedFactories, Tripler } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
-import { getHashCode } from "@tykowale/ts-hash-map"
 
 type _InternalPropertyValue = Literal | SubjectId
 
@@ -967,8 +966,8 @@ export class PropertyValueIdentifier implements SubjectId {
     if (this.hash)
       return this.hash
     this.hash = this.subject.hashCode()
-    this.hash ^= (this.hash * 31) + getHashCode(this.property);
-    this.hash |= 0;    
+    this.hash ^= (this.hash * 31) + Hashing.hashString(this.property)
+    this.hash |= 0
     return this.hash
   }
 
