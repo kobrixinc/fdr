@@ -555,7 +555,11 @@ export class SubjectImpl extends SubjectBase  {
   }
 
   workingCopy(reactivityDecorator?: <T extends Subject>(original: T) => T): Subject {
-    const handler: ProxyHandler<Subject> = {
+    /*
+      Access the working copy directly (workingCopy[propertyName]) 
+      if calling workingCopy.get(propertyName) returns nothing
+    */
+    const directPropertyAccessProxy: ProxyHandler<Subject> = {
       get(target, prop /*, receiver */) {
         let s = target as Subject
         // Here we are treating RDF properties (full IRIs) the same as JavaScript
@@ -570,6 +574,7 @@ export class SubjectImpl extends SubjectBase  {
         return true
       }
     }
+
     let result = new SubjectLightCopy(
       this, 
       () => this.graph, 
@@ -577,7 +582,7 @@ export class SubjectImpl extends SubjectBase  {
 
     result.hydrate(this.properties||{})
 
-    result = new Proxy<SubjectLightCopy>(result, handler)
+    result = new Proxy<SubjectLightCopy>(result, directPropertyAccessProxy)
     if (reactivityDecorator)
       result = reactivityDecorator(result)
     else if (this.graph.reactivityDecorator)
@@ -629,7 +634,7 @@ export class SubjectImpl extends SubjectBase  {
 /**
  * A buffer for changes to another subject
  */
-class  SubjectLightCopy extends SubjectBase {
+class SubjectLightCopy extends SubjectBase {
   
   get ready(): boolean { return true }
 
