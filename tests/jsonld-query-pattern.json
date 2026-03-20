@@ -1,0 +1,16 @@
+{
+  "@type":"voc:Human",
+  "voc:world":{
+    "fdr:query": {
+      "fdr:fetch":"one whole object"
+    },    
+    "@type":"voc:Planet",
+    "voc:name":"Stewjon",
+    "voc:residents": {
+      "fdr:query": {
+        "fdr:fetch":"all"
+      },
+      "@type":"voc:Human"
+    }
+  }
+}

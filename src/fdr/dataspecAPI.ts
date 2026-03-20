@@ -262,7 +262,7 @@ export class AnnotatedDomainElement<IdType, ElementType> {
 /**
  * The interface responsible for translating between a data spec 
  * and its representation in triples. In particular the <code>fetch</code>
- * will know how translate a runtime type (e.g. a business entity) to
+ * will know how to translate a runtime type (e.g. a business entity) to
  * a SPARQL query and then populate the entity from the query results.
  */
 export interface Tripler<ElementType> {

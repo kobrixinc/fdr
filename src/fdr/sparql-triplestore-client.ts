@@ -1,108 +1,40 @@
 import { Dataset, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
-import datasetFactory from "@rdfjs/dataset"
 import rdf from 'rdf-ext'
 import { fdr, rdfjs } from "./fdr.js"
 import { SPARQLEndpoint, TripleStore } from "./triplestore-client.js"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt.js"
 import fetch from "isomorphic-fetch"
-import { SubjectId } from "./dataspecAPI.js"
+import { PathExpression, QuerySubject, SparqlSelect, Triple, Var } from "./sparql.js"
 
-export class Var {
-  constructor(readonly name: string) { }
-
-  private static sequence: number = 0
-  /**
-   * 
-   * @returns Newly generated variables look like "?v_nnn" where
-   * nnn is a sequence starting from 1.
-   */
-  static make(): Var { 
-    return new Var("v_" + (++Var.sequence))
-  }
-
-  equals(other: any): boolean {
-    return other instanceof Var && other.name == this.name
-  }
-
-  toString(): string {
-    return "?" + this.name
-  }
+class QueryPath {
+  constructor(readonly variable: Var, 
+              readonly path: PathExpression,
+              readonly constraints: Array<any> = []) { }
 }
 
-export class QuerySubject {
-  constructor(readonly iri: string) { }
-  equals(other: any): boolean {
-    return other instanceof QuerySubject && other.iri == this.iri
+function sparqlFromPaths(pathList: Array<QueryPath>): SparqlSelect { 
+  let sparql = new SparqlSelect()
+  let root = new Var("root")
+  for (const p of pathList) {
+    sparql.selection.variables.push(p.variable)
+    sparql.pattern.triples.push(new Triple(
+      root,
+      p.path,
+      p.variable
+    ))
+    for (const c of p.constraints) {
+      // TODO
+    }
+    // All properties
+    sparql.pattern.triples.push(new Triple(
+      p.variable,
+      new Var(p.variable.name + "_prop"),
+      new Var(p.variable.name + "_val")
+    ))
   }
 
-  toString(): string {
-    return "<" + this.iri + ">"
-  }
-
-  static make(shortname: string): QuerySubject {
-    return new QuerySubject(rdfjs.named(shortname).value)
-  }
+  return sparql
 }
-
-type Node = QuerySubject | Var | Literal
-
-function nodeEquals(x: Node, y: Node): boolean {
-  if (x instanceof Var) return (x as Var).equals(y)
-  else if (x instanceof QuerySubject) return (x as QuerySubject).equals(y)
-  else return x.value == (y as Literal).value
-}
-
-/**
- * For testing purpose, like nodeEquals, but will return true also
- * if both are falsy (i.e. undefined or null) or if both are variables
- * possibly with different names
- */
-function nodeSimilar(x: Node, y: Node): boolean {
-  if (!x) return !y
-  else if (x instanceof Var) return (y instanceof Var)
-  else if (x instanceof QuerySubject) return (x as QuerySubject).equals(y)
-  else return x.value == (y as Literal).value
-}
-
-function nodeToString(x: Node): string {
-  if (x instanceof Var)
-    return x.toString()
-  else if (x instanceof QuerySubject)
-    return x.toString()
-  else
-    return '"' + x.value + '"'
-}
-
-export class Triple {
-  constructor(readonly sub: Node, 
-              readonly pred: Node, 
-              readonly obj: Node)
-  {}
-
-  like(other: Triple): boolean {
-    return nodeSimilar(this.sub, other.sub) &&
-           nodeSimilar(this.pred, other.pred) &&
-           nodeSimilar(this.obj, other.obj)
-  }
-
-  equals(other: any): boolean {
-    return other instanceof Triple &&
-          nodeEquals(this.sub, other.sub) &&
-          nodeEquals(this.pred, other.pred) &&
-          nodeEquals(this.obj, other.obj)
-  }
-
-  /**
-   * Return a string suitable for Turtle/SPARQL output.
-   */
-  toString(): string {
-    return nodeToString(this.sub) + " " + 
-           nodeToString(this.pred) + " " + 
-           nodeToString(this.obj) + " ."
-  }
-}
-
-
 export class QueryPattern {
   subject: Node
   triples: Array<Triple> = []
