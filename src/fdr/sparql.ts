@@ -10,8 +10,8 @@ export class Var {
    * @returns Newly generated variables look like "?v_nnn" where
    * nnn is a sequence starting from 1.
    */
-  static make(): Var { 
-    return new Var("v_" + (++Var.sequence))
+  static make(n? : string): Var { 
+    return new Var(n || "v_" + (++Var.sequence))
   }
 
   equals(other: any): boolean {
@@ -29,8 +29,11 @@ export class QuerySubject {
     return other instanceof QuerySubject && other.iri == this.iri
   }
 
-  toString(): string {
-    return "<" + this.iri + ">"
+  toString(shortForm : boolean = false): string {
+    if (shortForm) 
+      return rdfjs.maker.resolver.inverse().resolve(this.iri) 
+    else
+      return "<" + this.iri + ">"
   }
 
   static make(shortname: string): QuerySubject {
@@ -64,18 +67,18 @@ export const path = {
 
 export interface PathExpression { 
   equals(other: any): boolean
-  toString(): string
+  toString(shortForm? : boolean): string
 }
 
 class PathElement implements PathExpression {
-  constructor(readonly predicate: Node) {  }
+  constructor(readonly predicate: TripleNode) {  }
 
   equals(other: any): boolean {
     return other instanceof PathElement &&
            nodeEquals(this.predicate, other.predicate)
   }
-  toString(): string {
-    return nodeToString(this.predicate)
+  toString(shortForm? : boolean): string {
+    return nodeToString(this.predicate, shortForm)
   }
 }
 
@@ -170,9 +173,10 @@ class OneOrMorePath implements PathExpression {
   }
 }
 
-type Node = QuerySubject | Var | Literal
+// A node in a tripe in a SPARQL pattern.
+export type TripleNode = QuerySubject | Var | Literal
 
-function nodeEquals(x: Node, y: Node): boolean {
+export function nodeEquals(x: TripleNode, y: TripleNode): boolean {
   if (x instanceof Var) return (x as Var).equals(y)
   else if (x instanceof QuerySubject) return (x as QuerySubject).equals(y)
   else return x.value == (y as Literal).value
@@ -183,26 +187,26 @@ function nodeEquals(x: Node, y: Node): boolean {
  * if both are falsy (i.e. undefined or null) or if both are variables
  * possibly with different names
  */
-function nodeSimilar(x: Node, y: Node): boolean {
+export function nodeSimilar(x: TripleNode, y: TripleNode): boolean {
   if (!x) return !y
   else if (x instanceof Var) return (y instanceof Var)
   else if (x instanceof QuerySubject) return (x as QuerySubject).equals(y)
   else return x.value == (y as Literal).value
 }
 
-function nodeToString(x: Node): string {
+export function nodeToString(x: TripleNode, shortForm? : boolean): string {
   if (x instanceof Var)
     return x.toString()
   else if (x instanceof QuerySubject)
-    return x.toString()
+    return x.toString(shortForm)
   else
     return '"' + x.value + '"'
 }
 
 export class Triple {
-  constructor(readonly sub: Node, 
+  constructor(readonly sub: TripleNode, 
               readonly pred: PathExpression, 
-              readonly obj: Node)
+              readonly obj: TripleNode)
   {}
 
   like(other: Triple): boolean {
@@ -223,7 +227,8 @@ export class Triple {
    */
   toString(): string {
     return nodeToString(this.sub) + " " + 
-           this.pred.toString() + " " + 
+           this.pred.toString(true) + " " +
+           // + this.pred.toString() + " " + 
            nodeToString(this.obj) + " ."
   }
 }
@@ -242,6 +247,11 @@ class SparqlSelection {
 
 class SparqlPattern { 
   triples: Array<Triple> = []
+
+  addTriples(triples: Array<Triple>): SparqlPattern {
+    this.triples.push.apply(this.triples, triples)
+    return this
+  }
 
   toString(): string {
     return this.triples.map(t => t.toString()).join("\n")

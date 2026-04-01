@@ -143,6 +143,12 @@ class PrefixResolver implements NameResolver {
 class ConNameResolver implements NameResolver {
   private first: NameResolver
   private second: NameResolver
+  /**
+   * Constructor for ConNameResolver.
+   * 
+   * @param first The first NameResolver in the sequence
+   * @param second The second NameResolver in the sequence
+   */
   constructor(first: NameResolver, second: NameResolver) {
     this.first = first
     this.second = second

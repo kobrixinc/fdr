@@ -4,7 +4,33 @@
   // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
   "version": "0.2.0",
   "configurations": [
+    {
+      "name": "Launch Query Tests",
+      "request": "launch",
+      "runtimeArgs": [
+        "run",
+        "query-tests"
+      ],
+      "runtimeExecutable": "npm",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "node"
+    },
 
+    {
+      "name": "Launch Entity Tests",
+      "request": "launch",
+      "runtimeArgs": [
+        "run",
+        "entity-tests"
+      ],
+      "runtimeExecutable": "npm",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "type": "node"
+    },
     {
       "name": "Debug Test",
       "request": "launch",

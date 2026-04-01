@@ -1,146 +1,10 @@
 import { Dataset, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
 import rdf from 'rdf-ext'
-import { fdr, rdfjs } from "./fdr.js"
+import { rdfjs } from "./fdr.js"
 import { SPARQLEndpoint, TripleStore } from "./triplestore-client.js"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt.js"
 import fetch from "isomorphic-fetch"
-import { PathExpression, QuerySubject, SparqlSelect, Triple, Var } from "./sparql.js"
-
-class QueryPath {
-  constructor(readonly variable: Var, 
-              readonly path: PathExpression,
-              readonly constraints: Array<any> = []) { }
-}
-
-function sparqlFromPaths(pathList: Array<QueryPath>): SparqlSelect { 
-  let sparql = new SparqlSelect()
-  let root = new Var("root")
-  for (const p of pathList) {
-    sparql.selection.variables.push(p.variable)
-    sparql.pattern.triples.push(new Triple(
-      root,
-      p.path,
-      p.variable
-    ))
-    for (const c of p.constraints) {
-      // TODO
-    }
-    // All properties
-    sparql.pattern.triples.push(new Triple(
-      p.variable,
-      new Var(p.variable.name + "_prop"),
-      new Var(p.variable.name + "_val")
-    ))
-  }
-
-  return sparql
-}
-export class QueryPattern {
-  subject: Node
-  triples: Array<Triple> = []
-  related: Record<string, QueryPattern> = {}
-
-  constructor(readonly struct: object) { 
-    this.subject = this.struct.hasOwnProperty('@id') && this.struct['@id']
-    ? new QuerySubject(rdfjs.named(this.struct['@id']).value)
-    : Var.make()
-  }
-
-  patternFromStructure(): QueryPattern {
-    Object.keys(this.struct).forEach(key => {
-      if ("@context" == key || "@id" == key) {
-        // ignore for now, we assume context is globally set      
-        return
-      }
-      let value = this.struct[key]
-      let obj: Node | null = null
-      let pred: Node | null = null
-      if ("@type" == key) {
-        pred = new QuerySubject(rdfjs.named("rdf:type").value)
-        obj = value ? new QuerySubject(rdfjs.named(value).value) : Var.make()
-      }
-      else {
-        // need to deal with operators here eventually
-        pred = new QuerySubject(rdfjs.named(key).value)
-        if (value == null) {
-          obj = Var.make()
-        }
-        else if (typeof value == "object") {
-          obj = Var.make()
-          let nestedPattern = new QueryPattern(value)
-          nestedPattern.subject = obj
-          nestedPattern.patternFromStructure()
-          this.related[pred.iri] = nestedPattern          
-        }
-        else
-          obj = rdfjs.literal(value)
-      }
-      this.addTriple(this.subject, pred, obj)
-    })
-    return this
-  }
-
-  addTriple(sub: Node, pred: Node, obj: Node): QueryPattern {
-    this.triples.push(new Triple(sub, pred, obj))
-    return this
-  }
-
-  bindingsToMatch(bindings: object): object {
-    let result = {}
-    if (this.subject instanceof QuerySubject) {
-      result['@id'] = this.subject.iri
-    }
-    else { // var 
-      result['@id'] = bindings[(this.subject as Var).name].value
-    }
-    this.triples.forEach(t => {
-      if (!nodeEquals(t.sub, this.subject)) {
-        throw new Error("Unexpected triple with different subject: " + t.sub)
-      }
-      let predicateIri = (t.pred as QuerySubject).iri
-      let nestedPattern = this.related[predicateIri]
-      let propname = fdr.resolver.inverse().resolve(predicateIri)
-      let propvalue 
-      if (t.obj instanceof Var) {
-        if (nestedPattern) {
-          propvalue = nestedPattern.bindingsToMatch(bindings)
-        }
-        else {
-          propvalue = bindings[t.obj.name] 
-          if (propvalue.type == "literal")
-            propvalue = propvalue.value
-          else if (propvalue.type == "uri")
-            propvalue = fdr.resolver.inverse().resolve(propvalue.value)
-        }
-      }
-      else if (t.obj instanceof QuerySubject)
-        propvalue = fdr.resolver.inverse().resolve((t.obj as QuerySubject).iri)
-      else 
-        propvalue = (t.obj as Literal).value
-      result[propname] = propvalue
-    })
-
-    return result
-  }
-
-  get allTriples(): Array<Triple> {
-    let result = [...this.triples]
-    Object.values(this.related).forEach(nested => {
-      result.push.apply(result, nested.allTriples)
-    })
-    return result
-  }
-
-  toSparql(): string {
-    let query = "select * where { \n "
-    this.allTriples.forEach(t => {
-      query += t.toString() + "\n"
-    })
-    query += "}"
-    return query
-  }
-}
-
+import { QueryPattern, RootQueryPattern } from "./query.js"
 
 export class SparqlClient {
   constructor(readonly readEndpoint: string, 
@@ -361,17 +225,19 @@ constructor(readonly endpointUrl: string,
   }
   
   async match(queryPattern: object): Promise<Array<object>> {
-    let pattern = new QueryPattern(queryPattern)
-    pattern.patternFromStructure()
+    // let pattern = new QueryPattern(queryPattern)
+    // pattern.patternFromStructure()
+    let pattern = RootQueryPattern.make(queryPattern)
     // console.log(pattern)    
-    let bindings = await this.sparqlSelect({queryString: pattern.toSparql()})
-    let result: Array<object> = []
-    bindings.forEach(binding => {
-      let match = pattern.bindingsToMatch(binding)
-      // console.log(match)
-      result.push(match)
-    })
-    return result
+    let bindings = await this.sparqlSelect({queryString: pattern.toSparql().toString()})
+    // let result: Array<object> = []
+    // bindings.forEach(binding => {
+    //   let match = pattern.bindingsToMatch(binding)
+    //   // console.log(match)
+    //   result.push(match)
+    // })
+    // return result
+    return pattern.fromBindings(bindings) 
   }
 
   sparqlSelect(query: { queryString: string }): Promise<Array<object>> {

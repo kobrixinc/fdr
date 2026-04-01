@@ -16,6 +16,7 @@
     "api-tests": "ts-mocha tests/unit/fdr-api-tests.ts",
     "entity-tests": "ts-mocha --type-check tests/unit/entity-tests.ts",
     "sparql-triplestore-tests": "ts-mocha tests/unit/sparql-triplestore-tests.ts",
+    "query-tests": "ts-mocha tests/unit/query-tests.ts",    
     "test": "ts-mocha tests/**/*-tests.ts"
   },
   "repository": {

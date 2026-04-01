@@ -4,7 +4,7 @@ import { AnnotatedDomainElement, Constructor, DMEFactory, DMEFactoryConstructor,
 import { fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
 import { Quads, TripleStore } from "./triplestore-client.js"
-import { QuerySubject, Triple, Var } from "./sparql-triplestore-client.js"
+import { QuerySubject, Triple, Var } from "./sparql.js"
 class AttributeModel {
   constructor(readonly name: string, 
               readonly datatype: string,
@@ -221,7 +221,7 @@ function WithEntityDataSpec<TBase extends Constructor>(Base: TBase) {
       changes.forEach(applyOne)
     }
 
-    // Fist argument is the model (ClassModel) and therest
+    // Fist argument is the model (ClassModel) and the rest
     // is whatever the base class needs, however it's defined
     constructor(...args: any[]) {
       super(...args.slice(1))
