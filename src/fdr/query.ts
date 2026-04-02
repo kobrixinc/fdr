@@ -54,18 +54,29 @@ function isOperator(val: string): val is Operator {
   return Object.values(Operator).includes(val as Operator);
 }
 
-class LiteralValue {
+class LiteralObject {
+  parent: QueryPattern | null = null
+  variable: Var | null = null
+
   constructor(readonly operator: Operator, 
               readonly value: string | null = null, 
               readonly datatype: string = "xsd:string", 
-              readonly language: string = "@eng") { }
+              readonly language: string = "@eng") { 
+  }
+
+  queryContext(parent: QueryPattern, variable: Var): LiteralObject {
+    this.parent = parent
+    this.variable = variable
+    return this
+  }
 }
 
 export class QueryPattern {
   // Used both as a SPARQL variable representing this pattern and for recursive references
   // can be user provided and it has to be unique for the entire pattern or auto-generated.
-  refvar: Var = Var.make()  
-  propMap: Record<string, LiteralValue | QueryPattern> = {}
+  refvar: Var = new Var("")
+  iri: string | null = null // known @id
+  propMap: Record<string, LiteralObject | QueryPattern> = {}
   multiplicity: Record<string, boolean> = {}
   fetchAll: boolean = false
   sparqlFilters: Array<string> = []
@@ -79,11 +90,24 @@ export class QueryPattern {
   propName(objectVar: string): string | undefined {
     return Object.keys(this.propMap).find(key => {
       let value = this.propMap[key]
-      return value instanceof QueryPattern && value.refvar.name === objectVar
+      return value instanceof QueryPattern && value.refvar.name === objectVar ||
+             value instanceof LiteralObject && value.variable!.name === objectVar
     })
   }
 
+  protected literalProperty (key: string, 
+                             op: Operator, 
+                             value?: string | null, 
+                             datatype?: string, 
+                             language?: string) {
+    let propvar = Var.make(varnameFromProp(key))                              
+    this.root().patternReferences[propvar.name] 
+      = this.propMap[key]
+      = new LiteralObject(op, value, datatype, language).queryContext(this, propvar)
+  }
+
   protected parseOut(): QueryPattern {
+    this.refVar = Var.make()    
     Object.keys(this.struct).forEach(key => {
 
       let keyParts = key.split("\s+")
@@ -99,8 +123,12 @@ export class QueryPattern {
       else if ("@id" == key) {
         // is it a hard IRI, or a ref?
         if (value.startsWith("@")) {
-
+          // a reference means we want to match the same object exactly, same variable
         }
+        else { // otherwise it's a know IRI, to be matched exactly
+          this.iri = value
+        }
+        return
       }
       else if ("@type" == key) {
         key = "rdf:type"
@@ -109,7 +137,7 @@ export class QueryPattern {
       if (Array.isArray(value)) {
         if (value.length == 0) {
           // assume an array of Literals
-          this.propMap[key] = new LiteralValue(Operator.any)
+          this.literalProperty(key, Operator.any)
           return
         }
         else if (value.length == 1) {
@@ -139,7 +167,7 @@ export class QueryPattern {
         }
         else if (value == null)
           operator = Operator.any
-        this.propMap[key] = new LiteralValue(operator, value)
+        this.literalProperty(key, operator, value)
       }
     })
     return this
@@ -151,14 +179,15 @@ export class QueryPattern {
     if (existing && existing != this) {
       throw Error("Cannot have two patterns with the same name: " + v.name)
     }
+    this.root().patternReferences[v.name] = this
   }
 
   constructor(readonly parent: QueryPattern | null, readonly struct: object) { 
   }
   
   get subject(): QuerySubject | Var {
-    if ("@id" in this.propMap) {
-      return QuerySubject.make((this.propMap["@id"] as LiteralValue).value!)
+    if (this.iri) {
+      return QuerySubject.make(this.iri)
     }
     else {
       return this.refvar
@@ -171,17 +200,16 @@ export class QueryPattern {
       .filter(k => k != "@id").forEach(key => {      
         let v = this.propMap[key]
         let pred = path.predicate(rdfjs.named(key))
-        if (v instanceof LiteralValue) {
+        if (v instanceof LiteralObject) {
           if (v.operator == Operator.equals) {
             result.push(new Triple(this.subject, 
                                   pred, 
                                   rdfjs.literal(v.value!, v.language)))
           }
           else {
-            let propvar = Var.make(varnameFromProp(key))
-            result.push(new Triple(this.subject, pred, propvar))
+            result.push(new Triple(this.subject, pred, v.variable!))
             if (v.operator != Operator.any) {
-              this.sparqlFilters.push(propvar + " " + v.operator + " '" + v.value + "'")
+              this.sparqlFilters.push(v.variable + " " + v.operator + " '" + v.value + "'")
             }
           }
         }
@@ -205,7 +233,7 @@ export class QueryPattern {
  */
 export class RootQueryPattern extends QueryPattern {
 
-  patternReferences: Record<string, QueryPattern> = {}
+  patternReferences: Record<string, QueryPattern | LiteralObject>
   // TODO: maybe a similarly global to collect all paths
 
   /**
@@ -214,12 +242,22 @@ export class RootQueryPattern extends QueryPattern {
    */
   constructor(readonly struct: object) { 
     super(null, struct)
+    this.patternReferences = {} 
   }
   
   fromBindings(bindings: Array<object>): Array<object> {
     let self = this
-    let result = {}
-    let resultStructure = { }
+    let result = {}  // @id -> object for top-level (i.e. "root") entities returned
+    let resultStructure = { } // root ID -> (var -> object) for nested entities, let's us build the resulting structure 
+                              // bottom up by progressively connecting entities with their parents and properties.
+
+    function ensureRootNode(binding: object, refvar: Var): object {
+      let rootId = binding[refvar.name].value
+      let nodes = resultStructure[rootId] = resultStructure[rootId] || {}
+      let rootnode = result[rootId] = result[rootId] || { '@id': rootId }     
+      nodes[refvar.name] = rootnode      
+      return rootnode
+    }
 
     function findResultParentNode(rootId: string, key: string): {prop:string, node:object} {
       let nodes = resultStructure[rootId] = resultStructure[rootId] || {}
@@ -234,14 +272,12 @@ export class RootQueryPattern extends QueryPattern {
       return {prop: propname, node: nodes[parentVar]}
     }
 
-    bindings.forEach(binding => {
-      let rootId = binding[this.refvar.name].value
-      let root = result[rootId] = result[rootId] || {}      
-      root['@id'] = rootId
+    bindings.forEach(binding => {      
+      let root = ensureRootNode(binding, this.refvar)
       for (let key of Object.keys(binding).filter(k => k != this.refvar.name)) {
         // Find the node in the result tree which holds the value
         // of this key
-        let {prop, node} = findResultParentNode(rootId, key)
+        let {prop, node} = findResultParentNode(root['@id'], key)
         node[prop] = binding[key].value
       }
     })
