@@ -1,5 +1,5 @@
 import { Literal, NamedNode } from "@rdfjs/types"
-import { rdfjs } from "./fdr.js"
+import { fdr, rdfjs } from "./fdr.js"
 
 export class Var {
   constructor(readonly name: string) { }
@@ -269,8 +269,17 @@ export class SparqlSelect {
   pattern: SparqlPattern = new SparqlPattern()
   filter: SparqlFilter = new SparqlFilter()
 
+  get prefixes(): string {
+    return Object.entries(fdr.resolver.prefixResolver.prefixMap).map(
+      ([prefix, expansion]) => {
+        return `PREFIX ${prefix}: <${expansion}>`
+    }).join("\n")
+  }
+
   toString(): string {
     return `
+      ${this.prefixes}
+      
       SELECT ${this.selection.toString()} WHERE { 
         ${this.pattern.toString()}
         ${this.filter.toString()}

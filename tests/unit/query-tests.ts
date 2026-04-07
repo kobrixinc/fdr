@@ -27,7 +27,7 @@ const query2 = {
 }
 
 const query3 = {
-  "@type": "voc:Human",
+  "@type": {"@id" : "voc:Human"},
   "@fetch": "all", 
   "voc:homeworld": {
     "@type": "voc:Planet",
@@ -36,14 +36,25 @@ const query3 = {
   }
 }
 
+const query4 = {
+  "@id": "https://swapi.co/vocabulary/Aleena",
+  "voc:skinColor": []
+}
+
+const query5 = {
+  "@id": "https://swapi.co/resource/human/10",
+  "voc:film": [{"@type": {"@id": "voc:Film"}, "rdfs:label": null}],
+  "rdfs:label":null
+}
+
 it.only("Simple Query", async () => {
   console.log("simple query test")
-  let pattern = RootQueryPattern.make(query2)
+  let pattern = RootQueryPattern.make(query5)
   console.log(pattern.toSparql().toString())
   let bindings = await store.sparqlSelect({queryString: pattern.toSparql().toString()})
   // for (let binding of bindings) {    
   //   console.log(JSON.stringify(binding, null, 2), binding)
   // }
   let result = pattern.fromBindings(bindings)
-  console.log(result)
+  result.map(x => JSON.stringify(x)).forEach(console.log)
 }).timeout(1000000)

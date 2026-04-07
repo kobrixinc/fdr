@@ -2,6 +2,27 @@ import { Dataset, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
 import { fdr, rdfjs } from "./fdr.js"
 import { TripleNode, PathExpression, QuerySubject, SparqlSelect, Triple, Var, nodeEquals, path } from "./sparql.js"
 
+/*
+1. Reference to a different node with "@id": "@refvar" (same instance) [IMPLEMENTED, NOT TESTED]
+2. Handling of arrays of literals in query and in results 
+    As per query4, simple version with just [] works. Needs to test with conditions on the values, operators etc.
+3. Hanlding of arrays of objects in query and in results
+    as per query5 basic cases seem to work
+4. Operators and filters for literals 
+5. Two syntaxes for operators must be supported: 
+     (a) modified property names
+     (b) literal specs via directives, as objects
+6. Recursivity:
+   (a) simple linked list
+   (b) full object model with planets and humans and starships
+7. Is there a more elegant way to specify type than:
+     "@type": {"@id" : "voc:Human"},
+   something like "@type": "voc:Human", special treatment for a property to be interpreted as an IRI instead of literal      
+8. Directives
+    (a) @fetchAll true or false to get all properties, not only those mentioned
+    (b)    
+*/
+
 class QueryPath {
   constructor(readonly variable: Var, 
               readonly path: PathExpression,
@@ -75,7 +96,7 @@ export class QueryPattern {
   // Used both as a SPARQL variable representing this pattern and for recursive references
   // can be user provided and it has to be unique for the entire pattern or auto-generated.
   refvar: Var = new Var("")
-  iri: string | null = null // known @id
+  iri: string | null = null // known @id, if provided
   propMap: Record<string, LiteralObject | QueryPattern> = {}
   multiplicity: Record<string, boolean> = {}
   fetchAll: boolean = false
@@ -93,6 +114,10 @@ export class QueryPattern {
       return value instanceof QueryPattern && value.refvar.name === objectVar ||
              value instanceof LiteralObject && value.variable!.name === objectVar
     })
+  }
+
+  isPattern(propName: string): boolean {
+    return this.propMap[propName] instanceof QueryPattern
   }
 
   protected literalProperty (key: string, 
@@ -135,6 +160,7 @@ export class QueryPattern {
       }
 
       if (Array.isArray(value)) {
+        this.multiplicity[key] = true
         if (value.length == 0) {
           // assume an array of Literals
           this.literalProperty(key, Operator.any)
@@ -142,10 +168,13 @@ export class QueryPattern {
         }
         else if (value.length == 1) {
           value = value[0]
-          this.multiplicity[key] = true
           if (Array.isArray(value)) {
             throw new Error("Cannot interpret an array within an array in a query pattern")
           }
+          // TODO: might need to further check value here, if it's a literal, not clear
+          // what it means, the intent is to have an object pattern as the single value
+          // in an array. A literal might make sense in conjunction with a non-equality operator,
+          // e.g. "x >" : [100]   for all x > 100
         }
         else {
           throw Error("Cannot interpret an array in a query pattern, excepting 0 or 1 element")
@@ -182,12 +211,17 @@ export class QueryPattern {
     this.root().patternReferences[v.name] = this
   }
 
+  get refVar(): Var { return this.refvar }
+
   constructor(readonly parent: QueryPattern | null, readonly struct: object) { 
   }
   
   get subject(): QuerySubject | Var {
     if (this.iri) {
-      return QuerySubject.make(this.iri)
+      if (this.iri.startsWith("@"))
+        return Var.make(this.iri.substring(1))
+      else
+        return QuerySubject.make(this.iri)
     }
     else {
       return this.refvar
@@ -217,9 +251,24 @@ export class QueryPattern {
           result.push(new Triple(this.subject, 
                                  pred, 
                                  (v as QueryPattern).subject))
+          result.push.apply(result, (v as QueryPattern).triples)
         }
     })
     return result  
+  }
+
+  iriFromBinding(binding: object): string {
+    if (this.iri) {
+      if (!this.iri.startsWith("@"))
+        return this.iri
+      else {
+        let linked = this.root().patternReferences[this.iri.substring(1)] as QueryPattern
+        // assuming we've detected and errored out circular variable references
+        return linked.iriFromBinding(binding)      
+      }
+    }
+    else
+      return binding[this.refVar.name].value
   }
 
   root(): RootQueryPattern { 
@@ -245,40 +294,96 @@ export class RootQueryPattern extends QueryPattern {
     this.patternReferences = {} 
   }
   
-  fromBindings(bindings: Array<object>): Array<object> {
-    let self = this
-    let result = {}  // @id -> object for top-level (i.e. "root") entities returned
-    let resultStructure = { } // root ID -> (var -> object) for nested entities, let's us build the resulting structure 
-                              // bottom up by progressively connecting entities with their parents and properties.
+  isMultiple(pattern: QueryPattern): boolean {
+    if (!pattern.parent) return false
+    let prop = pattern.parent.propName(pattern.refVar.name)  
+    if (!prop) throw new Error("Unable to find property to " + pattern.refVar.name + 
+                                " in " + pattern.parent.refVar.name)
+    return pattern.parent.multiplicity[prop]
+  }
 
-    function ensureRootNode(binding: object, refvar: Var): object {
-      let rootId = binding[refvar.name].value
-      let nodes = resultStructure[rootId] = resultStructure[rootId] || {}
-      let rootnode = result[rootId] = result[rootId] || { '@id': rootId }     
-      nodes[refvar.name] = rootnode      
-      return rootnode
+  fromBindings(bindings: Array<object>): Array<object> {
+    
+    let self = this
+
+    // @id -> object for top-level (i.e. "root") entities returned
+    let result = {}  
+
+    // root ID -> (var -> object) for nested entities, let's us build the resulting structure 
+    // bottom up by progressively connecting entities with their parents and properties.    
+    let resultStructure = { } 
+
+    // flat @id -> object map so we make sure @id always points to a single object instance
+    let allnodes = {}
+
+    function ensureNode(atid: string): object {
+      return allnodes[atid] = allnodes[atid] || { '@id': atid }  
     }
 
-    function findResultParentNode(rootId: string, key: string): {prop:string, node:object} {
-      let nodes = resultStructure[rootId] = resultStructure[rootId] || {}
-      let parentPattern = self.patternReferences[key].parent
-      let parentVar = parentPattern!.refvar.name
-      nodes[parentVar] = nodes[parentVar] || {}
-      let propname = parentPattern!.propName(key)
-      if (!propname) {
-        console.log("Could not find property name for " + key + " in ", parentPattern)
-        throw new Error("Could not find property name for " + key + " in " + JSON.stringify(parentPattern))
+    function ensureRootNode(binding: object): object {
+      let rootId
+      if (self.iri) {
+        if (self.iri.startsWith("@"))
+          rootId = binding[self.iri.substring(1)].value
+        else
+          rootId = self.iri 
       }
-      return {prop: propname, node: nodes[parentVar]}
+      else
+        rootId = binding[self.refVar.name].value
+      let nodes = resultStructure[rootId] = resultStructure[rootId] || {}
+      return nodes[self.refVar.name] = result[rootId] = ensureNode(rootId)     
+    }
+
+    function findResultParentNode(rootId: string, varname: string, binding: object): 
+                    {prop:string, node:object, pattern: QueryPattern} {
+      let nodes = resultStructure[rootId] = resultStructure[rootId] || {}
+      let parentPattern = self.patternReferences[varname].parent!
+      let parentVar = parentPattern.refvar.name
+      let parentIRI = parentPattern.iriFromBinding(binding)
+      let node
+      if (self.isMultiple(parentPattern)) {
+        nodes[parentVar] = nodes[parentVar] || []    
+        node = nodes[parentVar].find(e => e['@id'] == parentIRI)
+        if (!node) {
+          node = ensureNode(parentIRI)
+          nodes[parentVar].push(node)
+        }
+      }
+      else
+        node = nodes[parentVar] = ensureNode(parentIRI)
+      let propname = parentPattern.propName(varname)
+      if (!propname) {
+        console.log("Could not find property name for " + varname + " in ", parentPattern)
+        throw new Error("Could not find property name for " + varname + " in " + JSON.stringify(parentPattern))
+      }
+      return {prop: propname, node: node, pattern: parentPattern}
+    }
+
+    function addArrayElement(prop, node, pattern, value) {
+      // Arrays (multiple values for the same properties) are sets
+      // not lists, so both literal and objects have to be added only once.
+      let A = node[prop] = node[prop] || []
+      if (pattern.isPattern(prop)) {
+        if (!A.find(e => e['@id'] == value))
+          node[prop].push(ensureNode(value))
+      }
+      else {
+        if (!A.includes(value))
+          node[prop].push(value)
+      }
     }
 
     bindings.forEach(binding => {      
-      let root = ensureRootNode(binding, this.refvar)
-      for (let key of Object.keys(binding).filter(k => k != this.refvar.name)) {
+      let root = ensureRootNode(binding)
+      for (let varname of Object.keys(binding).filter(k => k != this.refvar.name)) {
         // Find the node in the result tree which holds the value
         // of this key
-        let {prop, node} = findResultParentNode(root['@id'], key)
-        node[prop] = binding[key].value
+        let {prop, node, pattern} = findResultParentNode(root['@id'], varname, binding)
+        if (pattern.multiplicity[prop]) {
+          addArrayElement(prop, node, pattern, binding[varname].value)
+        }
+        else
+          node[prop] = binding[varname].value
       }
     })
     return Object.values(result) as Array<object>
