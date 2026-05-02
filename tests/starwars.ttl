@@ -4381,3 +4381,27 @@ captive Chancellor...."""^^xsd:string ;
         <https://swapi.co/resource/vehicle/72>,
         <https://swapi.co/resource/vehicle/73>,
         <https://swapi.co/resource/vehicle/76> .
+
+
+### Some additions to test recursive queries better.
+
+# Obi-Wan knows Leia
+<https://swapi.co/resource/human/10> foaf:knows <https://swapi.co/resource/human/5> .
+
+# Leia knows Luke
+<https://swapi.co/resource/human/5> foaf:knows <https://swapi.co/resource/human/1> .
+
+# Luke knows Han Solo
+<https://swapi.co/resource/human/1> foaf:knows <https://swapi.co/resource/human/14> .
+
+# Han Solo knows Lando Calrissian
+<https://swapi.co/resource/human/14> foaf:knows <https://swapi.co/resource/human/25> .
+
+# Luke knows Vader
+<https://swapi.co/resource/human/1> foaf:knows <https://swapi.co/resource/human/4> .
+
+# Vader knows Padme
+<https://swapi.co/resource/human/4> foaf:knows <https://swapi.co/resource/human/35> .
+
+# Padme knows
+<https://swapi.co/resource/human/35> foaf:knows <https://swapi.co/resource/human/11> .

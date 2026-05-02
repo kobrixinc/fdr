@@ -7,7 +7,8 @@ import { RootQueryPattern } from "../../src/fdr/query.js"
 
 const prefixes: {[key: string]: any}  = {
   "voc": "https://swapi.co/vocabulary/",
-  "rdfs": "http://www.w3.org/2000/01/rdf-schema#"
+  "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+  "foaf": "http://xmlns.com/foaf/0.1/"
 }
 
 let endpointurl = 'http://localhost:7200/repositories/starwars'
@@ -47,9 +48,16 @@ const query5 = {
   "rdfs:label":null
 }
 
+const query6 = {
+  "@id": "https://swapi.co/resource/human/10",
+  "@ref": "me",
+  "foaf:knows": {"@pattern": "me"},
+  "rdfs:label":null
+}
+
 it.only("Simple Query", async () => {
   console.log("simple query test")
-  let pattern = RootQueryPattern.make(query5)
+  let pattern = RootQueryPattern.make(query6)
   console.log(pattern.toSparql().toString())
   let bindings = await store.sparqlSelect({queryString: pattern.toSparql().toString()})
   // for (let binding of bindings) {    
