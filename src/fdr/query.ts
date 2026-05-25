@@ -151,6 +151,9 @@ export class QueryPattern {
   multiplicity: Record<string, boolean> = {}
   fetchAll: boolean = false
 
+  fetchAllPropVar : Var | null = null
+  fetchAllValueVar : Var | null = null
+
   // State during SPARQL generation
   sparqlFilters: Array<string> = []
 
@@ -277,6 +280,13 @@ export class QueryPattern {
       }
       else if ("@type" == key) {
         key = "rdf:type"
+        if (typeof value == "string") {
+          value = {"@id": value}
+        }
+      }
+      else if ("@fetch" == key) {
+        this.fetchAll = true
+        return
       }
 
       if (Array.isArray(value)) {
@@ -322,41 +332,7 @@ export class QueryPattern {
 
     return this
   }
-
-  // protected patternTriples(): Array<Triple> {
-  //   let chain: Array<QueryPattern> = [this]
-  //   let par = this.parent
-  //   while (par && par.refVar.name != this.patternName) {
-  //     chain.push(par)
-  //     par = par.parent
-  //   }
-  //   if (!par) {
-  //     // pattern is elsewhere in the query tree, we just do a complete clone as
-  //     // there is no cycle involved
-  //     let toClone = this.root().find(qp => qp.refVar.name == this.patternName)
-  //     // Need a "fresh" copy of to clone here as a QueryPattern, and then
-  //     // return triples generated from it
-  //     return []
-  //   }
-  //   else {
-  //     // We generate a path expression for the variable chain
-  //     chain.push(par)
-  //     let propArray: Array<string> = []
-  //     for (const p of chain) {
-  //       if (!p.parent) continue
-  //       let propname = p.parent.propName(p.refVar.name)
-  //       if (!propname)
-  //         throw new Error("Unable to find property " + p.refVar.name + " in " + JSON.stringify(p.parent))
-  //       propArray.unshift(propname)
-  //       this.root().propertyInPathExpression(p.parent, propname)
-  //     }      
-  //     let pathPattern = new PathCycle(par, this, propArray) 
-  //     // let thepath = path.plus(path.sequence(...propArray.map(p => path.predicate(rdfjs.named(p)))))
-  //     // return [new Triple(par.subject, thepath, this.subject)]
-  //     return pathPattern.triples
-  //   }
-  // }
-
+  
   set refVar(v: Var) { 
     this.refvar = v 
     let existing = this.root().patternReferences[v.name]
@@ -425,6 +401,11 @@ export class QueryPattern {
           result.push.apply(result, (v as QueryPattern).triples)
         }
     })
+    if (this.fetchAll) {
+      this.fetchAllPropVar = Var.make(varnameFromProp("fdr:allprops"))
+      this.fetchAllValueVar = Var.make(varnameFromProp("fdr:allvalues"))
+      result.push(new Triple(this.subject, this.fetchAllPropVar, this.fetchAllValueVar))
+    }
     return result  
   }
 
@@ -541,13 +522,10 @@ export class RootQueryPattern extends QueryPattern {
     }
 
     function connectPathOccurrence(rootId: string, cycle: PathCycle, binding: object) {
-//      let nodes = resultStructure[rootId] = resultStructure[rootId] || {} 
-
       let currentNode = ensureNode(cycle.startPattern.iriFromBinding(binding))
       for (let p of cycle.path) {
         let next = ensureNode(binding[cycle.firstOccurrenceVariables[p]].value)
         assignValue(p, currentNode, cycle.startPattern, next)
-        // currentNode[p] = next
         currentNode = next
       }
 
@@ -555,14 +533,12 @@ export class RootQueryPattern extends QueryPattern {
       for (let p of cycle.path) {
         let next = ensureNode(binding[cycle.cycleVariables[p]].value)
         assignValue(p, currentNode, cycle.endPattern, next)
-        // currentNode[p] = next
         currentNode = next
       }
   
     }
 
     function connectPattern(rootId: string, pattern: QueryPattern, binding: object): object {
-//      let nodes = resultStructure[rootId] = resultStructure[rootId] || {}
       let node = ensureNode(pattern.iriFromBinding(binding))
       for (const p of Object.keys(pattern.propMap)) {
         let atP = pattern.propMap[p]
@@ -577,13 +553,19 @@ export class RootQueryPattern extends QueryPattern {
         }
         else {
           let literal = atP as LiteralObject
-          assignValue(p, node, pattern, binding[literal.variable!.name])
-          // node[p] = binding[literal.variable!.name]
+          let value = literal.operator == Operator.equals 
+                        ? literal.value 
+                        : binding[literal.variable!.name]
+          assignValue(p, node, pattern, value)
         }
       }
-      // if (pattern.pathCycle) {
-      //   connectPathOccurrence(rootId, pattern.pathCycle, binding)
-      // }
+      if (pattern.fetchAll) {
+        let propname = binding[pattern.fetchAllPropVar!.name]
+        let propvalue = binding[pattern.fetchAllValueVar!.name]
+        let shortPropname = fdr.resolver.prefixResolver.inverse().resolve(propname.value)
+        // let value =  (propvalue.type == 'uri') ? ensureNode(propvalue.value) : propvalue
+        assignValue(shortPropname, node, pattern, propvalue)
+      }
       return node
     }
 
@@ -625,7 +607,14 @@ export class RootQueryPattern extends QueryPattern {
      * @param pattern The pattern that the node matched
      * @param value The value to assign
      */
-    function assignValue(prop, node, pattern, value): object {      
+    function assignValue(prop, node, pattern, value): object {    
+      // if (!pattern.isPattern(prop) && typeof value == "object") {
+      if (typeof value == "object") {
+        if ("literal" == value['type'])
+          value = value.value
+        else if ("uri" == value['type'])
+          value = ensureNode(value.value)
+      } 
       if (pattern.multiplicity[prop]) {
         // we always want an array here
         addArrayElement(prop, node, pattern, value)
@@ -668,7 +657,8 @@ export class RootQueryPattern extends QueryPattern {
           pushToArray(ensureNode(value['@id']))
       }
       else {
-        if (!A.find(l => l.type == value.type && l.value == value.value))
+        // if (!A.find(l => l.type == value.type && l.value == value.value))
+        if (!A.find(x => x == value))
           pushToArray(value)
       }
     }
@@ -687,8 +677,10 @@ export class RootQueryPattern extends QueryPattern {
       // }
       connectPattern(root['@id'], self, binding)
     })
-    console.log(safeStringify(resultStructure))
-    return Object.values(result) as Array<object>
+    // console.log(safeStringify(resultStructure))
+    let resultArray = Object.values(result) as Array<object>
+    console.log(safeStringify(resultArray))
+    return resultArray
   }
   toSparql(): SparqlSelect {
     let select = new SparqlSelect()
