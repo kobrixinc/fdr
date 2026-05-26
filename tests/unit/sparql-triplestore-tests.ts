@@ -1,7 +1,7 @@
-import { assert } from "chai"
+import { assert, expect } from "chai"
 import { DatasetCore, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
-import { rdfjs } from "../../src/fdr/fdr.js"
-import SPARQLProtocolClient, { SparqlClient } from "../../src/fdr/sparql-triplestore-client.js"
+import { fdr, rdfjs } from "../../src/fdr/fdr.js"
+import SPARQLProtocolClient, { QueryPattern, QuerySubject, SparqlClient, Triple, Var } from "../../src/fdr/sparql-triplestore-client.js"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "../../src/fdr/changemgmt.js"
 
 describe("SPARQL Protocol Implementation Tests", function() {
@@ -33,6 +33,8 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
   }
   return A
 }
+
+fdr.resolver.prefixResolver.set("voc", "https://swapi.co/vocabulary/")
 
   it('Fetches a subject with properties', async () => {
     let client = new SparqlClient("http://localhost:7200/repositories/starwars")
@@ -139,5 +141,27 @@ function valuesOf(prop: NamedNode, set: DatasetCore): Array<Term> {
     assert(annotatedTriples.length == changes.length, "Expecting " + annotatedTriples.length + " changes for new annotated triples.")
     storedAnnotations = await endpoint.fetch(...annotatedTriples)
     assert(storedAnnotations.size == 0, "There are still annotations to boxoffice triples not removed.")
+  })
+  
+  it.only('Pattern to SPARQL generation', async () => {
+    let pattern = new QueryPattern({
+      "@type": "voc:Planet",
+      "rdfs:label": null,
+      "voc:film": null
+    })
+    pattern.patternFromStructure()
+    console.log(pattern)
+    expect(pattern.triples.filter(
+        x => new Triple(Var.make(), 
+                        QuerySubject.make("rdf:type"), 
+                        QuerySubject.make("voc:Planet")).like(x)))
+      .to.not.be.empty
+
+    let endpoint = setupEndpoint()      
+    let bindings = await endpoint.sparqlSelect({queryString: pattern.toSparql()})
+    bindings.forEach(binding => {
+      let match = pattern.bindingsToMatch(binding)
+      console.log(match)
+    })
   })
 })

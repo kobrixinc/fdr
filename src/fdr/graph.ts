@@ -1,11 +1,12 @@
 
 import { QuadChange } from "./changemgmt.js"
-import { DataSpec, DataSpecFactory, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
-import { SubjectImpl, type_guards, PropertyValueIdentifier } from "./dataspec.js"
+import { AnnotatedDomainElement, DMEFactory, DMEFactoryConstructor, DMEFactoryImpl, DataSpec, DomainAnnotatedFactories, DomainElementId, IRISubjectId, Subject, SubjectId} from "./dataspecAPI.js"
+import { SubjectImpl, type_guards, PropertyValueIdentifier, SubjectAnnotatedFactory } from "./dataspec.js"
 import { TripleStore } from "./triplestore-client.js"
 import { rdfjs, GraphEnvironment } from "./fdr.js"
 import { Dataset, Quad } from "@rdfjs/types"
-
+import { HashMap } from "@tykowale/ts-hash-map"
+import { Hashing } from "../utils.js"
 /**
  * A Graph is a collection of Subjects, each with their properties.
  * 
@@ -17,7 +18,7 @@ export interface Graph {
    */
   env: GraphEnvironment 
   
-  factory: DataSpecFactory
+  factory: any
 
   /**
    * Intending to use the specified data, make sure it is 
@@ -49,69 +50,64 @@ export interface Graph {
 export class LocalGraph implements Graph { 
 
   public id : string
-  public label : string
-  readonly factory: DataSpecFactory
+  // readonly factory: DataSpecFactory
   client: TripleStore
-  private cache = { 
-    subjects: new Map<SubjectId, SubjectImpl>()
+
+  // For a performant cache we can use something like this:
+  // https://github.com/tykowale/ts-hash-map 
+  // assuming it gets a hashCode+equals style support, in addition
+  // to the clever stuff it's already doing with well-known JS types.
+  private cache_options = { 
+    hashFn: Hashing.hashIt, 
+    equalsFn: Hashing.equals
   } 
+  private cache = new HashMap<DomainElementId<any>, DataSpec<any>>(this.cache_options)
+
+  private factory_functions = {
+    'subject': this.factoryInGraphContext(new SubjectAnnotatedFactory(this))
+  }
+
+  private factories = { }
+
   private _reactivityDecorator : <T extends Subject>(T) => T = (x) => x
 
-  private static factory_impl = class implements DataSpecFactory {
-    
-    constructor(readonly graph: LocalGraph) { }
-
-    subject(id: SubjectId): SubjectImpl {
-      const resolver = this.graph.env.resolver
-      
-      function resolve(id : SubjectId) : SubjectId {
-        if (id  instanceof PropertyValueIdentifier) {
-          return new PropertyValueIdentifier(
-            resolve(id.subject),
-            resolver.resolve(id.property),
-            id.value) 
-        } 
-        else if (id instanceof IRISubjectId) {
-          return new IRISubjectId(resolver.resolve(id.iri))
-        }
-        throw new Error(`Subject id ${id} is unsupported`)
+  private factoryInGraphContext(factory: DMEFactory<any, any>): Function {
+    return (...args) => {
+      let id = factory.identify(...args)
+      let existing = this.cache.get(id)
+      if (existing) {
+        return existing
       }
-      const resolved = resolve(id)
-      /*
-      TODO 
-      we need a better (O(1)) retrieval of existing subjects
-      from the map; the key is not a primitive value, so subjects.get()
-      does not work 
-      */
-      for (const entry of this.graph.cache.subjects.entries()) {
-        if (entry[0].equals(resolved)) {
-          return entry[1] 
-        }
-        this.graph.cache.subjects.get(resolved)
-      }
-      const res = new SubjectImpl(resolve(id), this.graph)
-      this.graph.cache.subjects.set(resolved, res)
-      return res 
-    
+      let newel: AnnotatedDomainElement<any, any> = factory.make(...args, this)
+      this.cache.set(newel.id, newel.element)
+      return newel.element          
     }
   }
 
-  //TODO consider this as public graph creation factory to discourage direct calls to the constructor
-  // static _make(env:GraphEnvironment, client: TripleStore, id : string, label : string = id)
-  // {
-  //   return new LocalGraph(env, client, id, label)
-  // }
+  private initializeFactories(fmap: Map<string, DMEFactoryConstructor<any, any>>): void {
+    fmap.forEach((cons, typename) => {
+      let factory: DMEFactory<any, any> = cons(this)
+      this.factories[typename] = factory
+      this.factory_functions[typename] = this.factoryInGraphContext(factory)
+    })
+  }
 
   /**
    * This constructor is internal and should not be used directly
    */
-  constructor(readonly env:GraphEnvironment, client: TripleStore, id : string, label : string = id) {
+  constructor(readonly env:GraphEnvironment, 
+              client: TripleStore, 
+              id : string,
+              annotatedFactories: DomainAnnotatedFactories) {
     this.client = client
-    this.factory = new LocalGraph.factory_impl(this)
+    // this.factory = new LocalGraph.factory_impl(this)
     this.id = id
-    this.label = label
+    this.initializeFactories(annotatedFactories.factoryMap)
   }
 
+  get factory() {
+    return this.factory_functions
+  }
   /**
    * Set the reactivity decorators for all working copies created from subjects
    * in this graph.
@@ -131,12 +127,9 @@ export class LocalGraph implements Graph {
   get reactivityDecrator() {
     return this._reactivityDecorator
   }
-
   
   clear() {
-    this.cache = { 
-      subjects: new Map<SubjectId, SubjectImpl>() 
-    }
+    this.cache = new HashMap<DomainElementId<any>, DataSpec<any>>(this.cache_options) 
   }
 
   /**
@@ -164,41 +157,19 @@ export class LocalGraph implements Graph {
 
 
   async use<T extends DataSpec<any>>(desc: T): Promise<T> {
-    //local graph only uses RemoteDataSpecs
-    let result = desc  
-    if (!type_guards.isRemoteDataSpec(desc))
-      throw new Error(`${desc} is expected to be a RemoteDataSpec`)
+
+    let factory: DMEFactory<any, T> = this.factories[desc.typename]
+
     if (!desc.ready) {
-      let data : Dataset<Quad, Quad>
-      if (type_guards.isSubjectValue(desc)) {
-        const id = (desc as Subject).id 
-        if (id instanceof PropertyValueIdentifier) {
-          data = await this.client.fetch(id.toQuad()) 
-        }
-        else if (id instanceof IRISubjectId){
-          data = await this.client.fetch(rdfjs.named(id.iri)) 
-        }
-        else {
-          throw new Error(`${id} is neither IRI, nor property value identifier`)
-        }
-      }
-      else {
-        throw new Error(`Fetching non subject dataspecs is not supported`)
-      }
-      if (data != null) {
-        desc.ingest(data)
-      }
-      result = desc
+      desc = await factory.tripler.fetch(this.client, desc)
     }
-    return result    
+    return desc
   }
   
-
   close(desc: DataSpec<any>): void {
     //TBD: should this remove the data spec from?
     throw new Error("Method not implemented.")
   }
-
 
   /**
    * Accept quad changes pushed from a remote source (e.g. BE triplestore)
@@ -208,5 +179,4 @@ export class LocalGraph implements Graph {
     //TODO
     console.log('not implemented')
   }
-
 }

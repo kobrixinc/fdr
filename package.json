@@ -14,6 +14,9 @@
     "doc": "npx typedoc --out docs/api --tsconfig tsconfig-build.json src/index.ts",
     "dummy-test": "ts-mocha ./tests/unit/dummy-unit-test.ts",
     "api-tests": "ts-mocha tests/unit/fdr-api-tests.ts",
+    "entity-tests": "ts-mocha --type-check tests/unit/entity-tests.ts",
+    "sparql-triplestore-tests": "ts-mocha tests/unit/sparql-triplestore-tests.ts",
+    "query-tests": "ts-mocha tests/unit/query-tests.ts",    
     "test": "ts-mocha tests/**/*-tests.ts"
   },
   "repository": {
@@ -28,26 +31,28 @@
   "homepage": "https://github.com/kobrixinc/fdr#readme",
   "peerDependencies": {
     "@rdfjs/data-model": "^2.0.0",
-    "@rdfjs/dataset": "^2.0.0"
-  },
-  "dependencies": {
+    "@rdfjs/dataset": "^2.0.0",
+    "@rdfjs/types": "^1.1.0",
+    "@tykowale/ts-hash-map": "^1.2.0",
+    "@types/isomorphic-fetch": "^0.0.36",
     "isomorphic-fetch": "^3.0.0",
     "rdf-ext": "^2.2.0",
+    "reflect-metadata": "^0.2.2",
     "subscription": "^3.0.0"
   },
   "devDependencies": {
-    "@types/isomorphic-fetch": "^0.0.36",
-    "@rdfjs/types": "^1.1.0",
     "@rdfjs/data-model": "^2.0.0",
     "@rdfjs/dataset": "^2.0.0",
+    "@rdfjs/types": "^1.1.0",
     "@types/chai": "^4.3.4",
     "@types/expect": "^24.3.0",
+    "@types/isomorphic-fetch": "^0.0.36",
     "@types/mocha": "^10.0.1",
     "chai": "^4.3.7",
     "mocha": "^10.1.0",
     "np": "^7.6.2",
-    "ts-mocha": "^10.0.0",
-    "ts-node": "^10.9.1",
+    "ts-mocha": "^11.1.0",
+    "ts-node": "^10.9.2",
     "typedoc": "^0.23.24"
   }
 }

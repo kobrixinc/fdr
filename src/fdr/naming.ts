@@ -15,7 +15,6 @@ interface WithResolver {
   resolver: NameResolver
 }
 
-
 class ResolverHolder implements WithResolver {
   resolver = resolvers.default()
 }
@@ -94,6 +93,9 @@ class PrefixResolver implements NameResolver {
   constructor(prefixes: object) {
     this.prefixes = new Map<string, string>(Object.entries(prefixes))
   }
+
+  get prefixMap(): object { return Object.fromEntries(this.prefixes) }
+
   inverse(): NameResolver {
     const _inv = {} 
     for (const k of this.prefixes) {
@@ -143,6 +145,12 @@ class PrefixResolver implements NameResolver {
 class ConNameResolver implements NameResolver {
   private first: NameResolver
   private second: NameResolver
+  /**
+   * Constructor for ConNameResolver.
+   * 
+   * @param first The first NameResolver in the sequence
+   * @param second The second NameResolver in the sequence
+   */
   constructor(first: NameResolver, second: NameResolver) {
     this.first = first
     this.second = second

@@ -1,10 +1,14 @@
+//import { Literal } from "@rdfjs/types"
+import { Hashing } from "../utils.js"
 import { PropertyChange } from "./changemgmt.js"
-import { LiteralValue } from "./fdr.js"
+import { LiteralValue, LiteralStruct, Graph, TripleStore } from "./fdr.js"
 
 /*
 This module contains all the types the user needs in order to interact with
 FDR. 
 */
+
+export type Constructor = new (...args: any[]) => {}
 
 /**
  * A description of some data. Could be simply a reference, e.g. URI
@@ -29,6 +33,12 @@ FDR.
  * will return the user-facing type
  */
 export interface DataSpec<SELF extends DataSpec<SELF>> {
+
+  /**
+   * The unique name of the type of this data spec. 
+   */
+  typename: string
+
   /**
    * Construct a working copy of this dataspec.
    * 
@@ -80,41 +90,11 @@ export interface SubjectChangeSynchronization {
 
 }
 
-/**
- * A dataspec which is part of a remote graph i.e. is a local copy of a remote object.
- * A RemoteDataSpec's definition can be represented like a serializable query which
- * can be sent to the remote graph.
- * The result returned by the remote graph can then be ingested in the RemoteDataSpec
- * state.
- */
-export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SELF> {
-  
-  /*
-  query and ingest do not need to be separate parts of the public api.
-  we could replace them with a separate void method which performs the data
-  fetch and ingest. we do not need the raw data at any point in the external
-  API
-  */
-
-  /**
-   * The wire format of this data spec's definition which is to be sent to the
-   * remote graph in order to query the dataspec's backing data
-   * 
-   * This is transport specific and we aim to support different backends so we should
-   * leave it to the transport implementation to serialize the DataSpecs
-  */
-
-  //query : any
-
-  /**
-   * Ingest the result set of running the query into this dataspec's state
-   * @param result 
-   */
-  ingest(result : any)
+export interface DomainElementId<T extends DomainElementId<T>> {
+  hashCode(): number
+  equals(other: T): boolean
+  toString(): string
 }
-
-// export type PropertyValue = Literal | Subject
-
 
 /**
  * The identifier of a subject
@@ -122,20 +102,22 @@ export interface RemoteDataSpec<SELF extends DataSpec<SELF>> extends DataSpec<SE
  * All implementations of this interface need to be immutable
  * 
  */
-export interface SubjectId {
-  toString(): string
-  equals(other : SubjectId): boolean
+export interface SubjectId extends DomainElementId<SubjectId> {
 } 
 
 export class IRISubjectId implements SubjectId {
   
   constructor(readonly iri: string){}
 
+  hashCode(): number {
+    return Hashing.hashString(this.iri)
+  }
+
   toString(): string {
     return this.iri
   }
   equals(other: SubjectId): boolean {
-    return (other as IRISubjectId).iri == this.iri
+    return other instanceof IRISubjectId && (other as IRISubjectId).iri == this.iri
   }
 
 }
@@ -190,7 +172,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param object the new property value 
    * TODO the object could be actually be a working copy of a subject; is this a valid operation?
    */
-  set(prop: string, lang?: string, ...object: Subject[]|LiteralValue[]) : Subject
+  set(prop: string, ...object: Subject[]|LiteralValue[]|LiteralStruct[]) : Subject
 
 
   /**
@@ -200,7 +182,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param object the new property value 
    * TODO the object could be actually be a working copy of a subject; is this a valid operation?
    */
-  setMore(prop: string, lang?: string, ...object: Subject[]|LiteralValue[]) : Subject
+  setMore(prop: string, ...object: Subject[]|LiteralValue[]|LiteralStruct[]) : Subject
 
   /**
    * delete some values from a property
@@ -208,7 +190,7 @@ export interface Subject extends DataSpec<Subject> {
    * @param lang 
    * @param val the values to delete
    */
-  delete(prop: string, lang?: string, ...val: Subject[] |LiteralValue[]) : Subject
+  delete(prop: string, ...val: Subject[] |LiteralValue[]|LiteralStruct[]) : Subject
 
 
   /**
@@ -254,24 +236,122 @@ export interface Subject extends DataSpec<Subject> {
    * non optional regardless of wheather it is set as optional. I.e. this
    * method will always return a subject which represents the 
    */
-  propertyAsSubject(propertyName: string, value: LiteralValue|Subject, lang?: string): Subject
+  propertyAsSubject(propertyName: string, value: LiteralValue|Subject|LiteralStruct): Subject
 
 }
 
+export class AnnotatedDomainElement<IdType, ElementType> {
+
+  /**
+   * The 'mentions' is a list of all IRI of nodes in the graph whose
+   * properties may affect the content of the domain element. That is,
+   * anytime a triple with a subject IRI in the mentions set gets
+   * removed or added as part of a change, the domain element will
+   * get notified when the change is committed.
+   * 
+   * TODO: is that list really a property of the element or its factory? Does
+   * it change from entity to entity, or is it just derived purely from the
+   * entity type.
+   */
+  mentions: Array<string> = []
+
+  constructor(readonly id: IdType, readonly element: ElementType) {
+  }  
+}
 
 /**
- * TODO:
- * The LocalGraph.factory implementation enforces the invariant
- * that each time we create a DataSpec with the same definition,
- * we are returning the same object.
- * 
- * Should that be the contract for the interface?
+ * The interface responsible for translating between a data spec 
+ * and its representation in triples. In particular the <code>fetch</code>
+ * will know how to translate a runtime type (e.g. a business entity) to
+ * a SPARQL query and then populate the entity from the query results.
  */
- export interface DataSpecFactory {
+export interface Tripler<ElementType> {
+
   /**
-   * Create a subject from a subject identifier;
-   * @param id 
+   * 
+   * Retrieve the relevant triples and populate a domain element from a given
+   * backing triplestore client.
+   * 
+   * @param client The triple store client to get the data from.
+   * @param element The domain element to populate with freshly read data
+   * from the store.
+   * @returns The <code>element</code> parameter.
    */
-  subject(id: SubjectId): Subject
+  fetch(client: TripleStore, element: ElementType): Promise<ElementType> 
+
+  /**
+   * 
+   * @param element 
+   * @param rawdata 
+   * @return The code>element</code> parameter.
+   */
+  // ingest(element: ElementType, rawdata: RawData): ElementType 
 }
 
+// this is not a factory anymore strictily speaking, so probably rename
+export interface DMEFactory<IdType, ElementType extends DataSpec<ElementType>> {
+
+  /**
+   * Return the class of elements this factory produces.
+   */
+  get elementType(): new(...args: Array<any>)=>any // Constructor
+
+  /**
+   * Create just the identifier out of the arguments normally
+   * used to construct a complete instance. This is used to avoid
+   * creating instances already in a cache. 
+   * @param args arguments to construct a new element
+   */
+  identify(...args): IdType 
+
+  /**
+   * Create a new element instance based on a list of arguments
+   * specific to this factory.
+   * @param args The arguments needed to create a new element
+   * instance.
+   */
+  make(...args): AnnotatedDomainElement<IdType, ElementType>
+
+  get tripler(): Tripler<ElementType> 
+}
+
+/**
+ * A DMEFactory is typically graph-aware, it needs a reference to the 
+ * <code>Graph</code> instance. For that reason when configuring/bootstrapping
+ * FDR, one needs to provide factory constuctors - functions that will create
+ * the relevant factories based on a <code>Graph</code> instance.
+ */
+export type DMEFactoryConstructor<IdType, ElementType extends DataSpec<ElementType>> 
+    = (Graph) => DMEFactory<IdType, ElementType>
+
+export abstract class DMEFactoryImpl<IdType, ElementType extends DataSpec<ElementType> > 
+  implements DMEFactory<IdType, ElementType> {
+    constructor(
+      readonly elementType: Constructor, 
+      readonly identify: (...args) => IdType,
+      readonly make: (...args) => AnnotatedDomainElement<IdType, ElementType>) 
+    {}
+    abstract get tripler(): Tripler<ElementType>
+  }
+
+export class DomainAnnotatedFactories {
+  private factories = new Map<string, DMEFactoryConstructor<any, any>>()
+
+  add<IdType, ElementType extends DataSpec<ElementType>>
+    (typename: string, factory: DMEFactoryConstructor<IdType, ElementType>): DomainAnnotatedFactories {
+      if (this.factories.has(typename))
+        throw "Trying to add duplicate factory name '" + typename + "' in DomainAnnotatedFactories."
+      this.factories.set(typename, factory)
+      return this
+  }
+  addFromMap(factories: object): DomainAnnotatedFactories {
+    Object.keys(factories).forEach(name => {
+      this.add(name, factories[name])
+    })
+    return this
+  }
+
+  get factoryMap(): Map<string, DMEFactoryConstructor<any, any>> {
+    return this.factories
+  }
+}

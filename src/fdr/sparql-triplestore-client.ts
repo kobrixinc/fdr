@@ -1,10 +1,10 @@
 import { Dataset, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
-import datasetFactory from "@rdfjs/dataset"
 import rdf from 'rdf-ext'
 import { rdfjs } from "./fdr.js"
 import { SPARQLEndpoint, TripleStore } from "./triplestore-client.js"
 import { KBChange, NoChange, QuadAdded, QuadChange, QuadRemoved } from "./changemgmt.js"
 import fetch from "isomorphic-fetch"
+import { QueryPattern, RootQueryPattern } from "./query.js"
 
 export class SparqlClient {
   constructor(readonly readEndpoint: string, 
@@ -63,9 +63,10 @@ export class SparqlClient {
       },
       body: query
     })
-    console.log(result, await result.text())
+    let responseBody = await result.text()
+    console.log(result, responseBody)
     if (result.status >= 400) // we don't know to handle redirects and such
-      throw new Error(await result.text())
+      throw new Error(responseBody)
     return result
   }
 }
@@ -223,6 +224,22 @@ constructor(readonly endpointUrl: string,
     return rdf.dataset(quads)
   }
   
+  async match(queryPattern: object): Promise<Array<object>> {
+    // let pattern = new QueryPattern(queryPattern)
+    // pattern.patternFromStructure()
+    let pattern = RootQueryPattern.make(queryPattern)
+    // console.log(pattern)    
+    let bindings = await this.sparqlSelect({queryString: pattern.toSparql().toString()})
+    // let result: Array<object> = []
+    // bindings.forEach(binding => {
+    //   let match = pattern.bindingsToMatch(binding)
+    //   // console.log(match)
+    //   result.push(match)
+    // })
+    // return result
+    return pattern.fromBindings(bindings) 
+  }
+
   sparqlSelect(query: { queryString: string }): Promise<Array<object>> {
     return this.client.select(query.queryString)
   }

@@ -1,14 +1,14 @@
 /* eslint-disable no-prototype-builtins */
 import { BlankNode, Dataset, Literal, NamedNode, Quad, Quad_Object, Quad_Subject, Variable } from "@rdfjs/types"
-import { asArray } from "../utils.js"
+import { asArray, Hashing } from "../utils.js"
 import { PropertyAdded, PropertyChange, PropertyRemoved, PropertyReplaced, QuadChange } from "./changemgmt.js"
-import { LiteralValue, fdr, rdfjs } from "./fdr.js"
+import { LiteralStruct, LiteralValue, fdr, rdfjs } from "./fdr.js"
 import { Graph, LocalGraph } from "./graph.js"
-import { DatasetIngester } from "./triplestore-client.js"
-import { Subject, RemoteDataSpec, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId } from "./dataspecAPI.js"
+import { DatasetIngester, Quads, TripleStore } from "./triplestore-client.js"
+import { Subject, DataSpec, SubjectChangeSynchronization, SubjectId, IRISubjectId, AnnotatedDomainElement, DMEFactory, DomainAnnotatedFactories, Tripler } from "./dataspecAPI.js"
 import { Subscription } from "subscription"
 
-type _InternalPropertyValue = Literal | Subject
+type _InternalPropertyValue = Literal | SubjectId
 
 /**
  * Base class for the concrete Subject implementation.
@@ -26,6 +26,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
 
   constructor(readonly id: SubjectId) {}  
 
+  get typename(): string { return "subject" }
   abstract getGraph() : Graph
   protected abstract notifyGraphAboutPropertyChange(prop : string[]) : void
   protected abstract resolveName(name : string) : string
@@ -37,14 +38,12 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   public onReferentsChanged : Subscription = new Subscription()
   protected onPropertyChanged : Subscription = new Subscription()
 
-  propertyAsSubject(propertyName: string, value: LiteralValue|Subject, lang? : string): Subject {
-    let parsedLang = this.parseLangString(lang)
-
-    const id = new PropertyValueIdentifier(
-      this.id, 
-      propertyName, 
-      type_guards.isSubjectValue(value) ? value : rdfjs.literal(value, parsedLang.language))
-      
+  propertyAsSubject(propertyName: string, value: LiteralValue|Subject|LiteralStruct, lang? : string): Subject {
+    const object = type_guards.isSubjectValue(value) ? value.id 
+                    : type_guards.isLiteralStruct(value) ?
+                      rdfjs.literal(value.value, value.language) 
+                    : rdfjs.literal(value, this.parseLangString(lang).language)
+    const id = new PropertyValueIdentifier(this.id, propertyName, object)      
     const subject = (this as unknown as SubjectBase).getGraph().factory.subject(id)
     return subject
   }
@@ -172,36 +171,36 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
   }
   
 
-  set(prop: string, lang?: string, ...object: Subject[] | LiteralValue[]): Subject {
+  set(prop: string, ...object: Subject[] | LiteralValue[]|Literal[]): Subject {
     let res : any
     prop = this.resolveName(prop)    
     if (type_guards.isSubjectValue(object))
       res = this.setObj(prop, ...object)
-    else if (type_guards.isLiteralValue(object))
-      res = this.setVal(prop, lang, ...object)
+    else if (type_guards.isLiteralValue(object) || type_guards.isLiteral(object))
+      res = this.setVal(prop, ...object)
     else throw new Error(`${object} should be either Subject or LiteralValue`)
 
     return res
   }
 
-  setMore(prop: string, lang?, ...object: Subject[] | LiteralValue[]): Subject {
+  setMore(prop: string, ...object: Subject[] | LiteralValue[] | Literal[]): Subject {
     let res : any
 
     if (type_guards.isSubjectValue(object))
       res = this.setMoreObjects(prop, ...object)
-    else if (type_guards.isLiteralValue(object))
-      res = this.setMoreValues(prop, lang, ...object)
+    else if (type_guards.isLiteralValue(object) || type_guards.isLiteral(object))
+      res = this.setMoreValues(prop, ...object)
     
     return res
   }
 
-  delete(prop: string, lang?, ...val: Subject[] |LiteralValue[]): Subject {
+  delete(prop: string, ...val: Subject[] |LiteralValue[] | Literal[]): Subject {
     let res : any
 
     if (type_guards.isSubjectValue(val))
       res = this.deleteObject(prop, ...val)
     else if (type_guards.isSubjectValue(val))
-      res = this.deleteValue(prop, lang, ...val)
+      res = this.deleteValue(prop, ...val)
     else throw new Error(`${val} should be either Subject or LiteralValue`)
 
     return res
@@ -244,10 +243,11 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       throw new Error('Object not ready')
 
     if (this.properties.hasOwnProperty(prop)) {
-      change = new PropertyReplaced(prop, asArray(this.obj(prop)), object)
+      let subid: SubjectId[] = this.obj(prop)?.map(s=>s.id) || []
+      change = new PropertyReplaced(prop, subid, object.map(s=>s.id))
     }
     else {
-      change = new PropertyAdded(prop, object)
+      change = new PropertyAdded(prop, object.map(s=>s.id))
     }
     this.enqueueToChangeBuffer(change)
     this.apply([change])
@@ -265,8 +265,8 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       let oldval = this.properties[prop]
       if (type_guards.isSubjectValue(oldval)) {
         const oldValAsArray = oldval instanceof Array ? oldval : [oldval]        
-        const u = union(oldValAsArray, objects)
-        change = new PropertyReplaced(prop, oldValAsArray, u)
+        const u = union(oldValAsArray, objects).map(s=>s.id)
+        change = new PropertyReplaced(prop, oldValAsArray.map(s=>s.id), u)
         
       }
       else {
@@ -275,7 +275,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       }
     }
     else {
-      change = new PropertyAdded(prop, objects)
+      change = new PropertyAdded(prop, objects.map(s=>s.id))
     }
     this.enqueueToChangeBuffer(change)
     this.apply([change])
@@ -293,7 +293,7 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       const oldValAsArray = oldval instanceof Array ? oldval : [oldval]
       // const removed = intersect(oldValAsArray, object)
 
-      const change = new PropertyRemoved(prop, object)
+      const change = new PropertyRemoved(prop, object.map(s=>s.id))
       this.apply([change])
       this.enqueueToChangeBuffer(change)
     }
@@ -335,18 +335,21 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * @param val 
    * @returns 
    */
-  private setVal(prop: string, lang?: string, ...val: LiteralValue[]): Subject {
-    let parsedLang = this.parseLangString(lang)
+  private setVal(prop: string, ...val: LiteralValue[]|Literal[]): Subject {
+    // let parsedLang = this.parseLangString(lang)
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
 
+    let language = this.parseLangString(undefined).language
+    let values = type_guards.isLiteral(val) ? val as Literal [] :
+              val.map(x => rdfjs.literal(x, language))
     let change : PropertyChange|null = null
     if (this.properties.hasOwnProperty(prop)) {
       change = new PropertyReplaced(
-        prop, asArray(this.val(prop)), val.map(x => rdfjs.literal(x, parsedLang.language)))
+        prop, asArray(this.val(prop)), values)
     }
     else {
-      change = new PropertyAdded(prop, val.map(x => rdfjs.literal(x, parsedLang.language)))
+      change = new PropertyAdded(prop, values)
     }  
     this.enqueueToChangeBuffer(change)
 
@@ -362,14 +365,18 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
    * @param val 
    * @returns 
    */
-  private setMoreValues(prop: string, lang?: string, ...val: LiteralValue[]): Subject {
-    let parsedLang = this.parseLangString(lang)
+  private setMoreValues(prop: string, ...val: LiteralValue[]|Literal[]): Subject {
+
     prop = this.resolveName(prop)
 
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
 
-    let newval = val.map(v => rdfjs.literal(v, parsedLang.language))      
+    let language = this.parseLangString(undefined).language
+
+    let newval = type_guards.isLiteral(val) ? val as Literal [] :
+              val.map(x => rdfjs.literal(x, language))
+
     let change
 
     if (this.properties.hasOwnProperty(prop)) {
@@ -397,8 +404,8 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
     return this
   }
 
-  private deleteValue(prop: string, lang?: string, ...val: LiteralValue[]): Subject {
-    let parsedLang = this.parseLangString(lang)
+  private deleteValue(prop: string, ...val: LiteralValue[]|Literal[]): Subject {
+    
     prop = this.resolveName(prop)
     if (!this.ready || this.properties == null)
       throw new Error('Object not ready')
@@ -407,7 +414,10 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
       let oldval = this.properties[prop]
       const oldValAsArray = oldval instanceof Array ? oldval : [oldval]      
       // const removed = intersect(oldValAsArray, val)
-      const change = new PropertyRemoved(prop, val.map(x => rdfjs.literal(x, parsedLang.language)))
+      let language = this.parseLangString(undefined).language
+      let toremove = type_guards.isLiteral(val) ? val as Literal [] :
+                val.map(x => rdfjs.literal(x, language))  
+      const change = new PropertyRemoved(prop, toremove)
       this.enqueueToChangeBuffer(change)
       this.apply([change])
     }
@@ -478,7 +488,10 @@ abstract class SubjectBase implements Subject, SubjectChangeSynchronization {
  * 
  * This class is only exported so that it's accessible to the `graph.ts` module.
  */
-export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> {
+export class SubjectImpl extends SubjectBase  {
+
+  get typename(): string { return 'subject' }
+
   getGraph(): Graph {
     return this.graph
   }
@@ -510,7 +523,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
           ontologyId: this.getGraph().id,
           subject: {id: this.id.subject},
           predicate: this.id.property,
-          object: (this.id.value as Subject).id ? {id: (this.id.value as Subject).id} : this.id.value,
+          object: (this.id.value as SubjectId) ? {id: (this.id.value as SubjectId)} : this.id.value,
         }
       }
     }
@@ -540,34 +553,6 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     }
   }
 
-  /**
-   * Ingest the quads from a dataset which are relevant to this Subject into 
-   * this Subject's properties
-   * 
-   * @param dataset 
-   */
-  ingest(dataset : Dataset<Quad, Quad>): void {
-    //isn't parseDataset and the logic after it duplicate?
-    const props = parseDataset(this.graph, this.id, dataset)
-    // const quads: Array<Quad> = Array.from(dataset['_quads'].values())
-    // This dataset.filter method is documented as part of the DatasetCore interface
-    // but it seems like it's not implemented yet. NEed to reach out to that rdfjs community
-    // and maybe get implicated, help or whatever...
-    // dataset.filter
-    // quads.filter( (quad:Quad) => quad.subject.value == this.id).forEach( quad => {
-    //   if (quad.object.termType == "NamedNode")
-    //     props[quad.predicate.value] = this.graph.factory.subject(quad.object.value)
-    //   else if (quad.object.termType == "Literal")
-    //     props[quad.predicate.value] = quad.object.value
-    // })
-    // should we merge here instead? what are different kinds of ingestion of triples about this subject?    
-    this.properties = props    
-    //TODO ingest annotation data from the dataset 
-    // for (const entry of Object.entries(annotation)) {
-    //   this.annotation[entry[0]] = entry[1]
-    // }
-  }
-
   workingCopy(reactivityDecorator?: <T extends Subject>(original: T) => T): Subject {
     /*
       Access the working copy directly (workingCopy[propertyName]) 
@@ -584,7 +569,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
       },
       set(target, prop, value) {
         let s = target as Subject
-        target.set(prop.toString(), undefined, value)
+        target.set(prop.toString(), value)
         return true
       }
     }
@@ -613,7 +598,7 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
   async commit(): Promise<void> {
     let changes : QuadChange[] = []
     this.changes.forEach(change =>  {
-      const quadchanges = change.toQuadChanges(this)
+      const quadchanges = change.toQuadChanges(this.id)
       changes = changes.concat(quadchanges)
     })
     try {
@@ -644,7 +629,6 @@ export class SubjectImpl extends SubjectBase implements RemoteDataSpec<Subject> 
     this.enqueueToChangeBuffer(...changes)
   }  
 }
-
 
 /**
  * A buffer for changes to another subject
@@ -772,55 +756,6 @@ function compareQuads(q1:Quad, q2:Quad) {
 
 }
 
-/**
- * parse a dataset into individual's properties
- * @param graph TODO only the factory is needed and it probably shouldn't be passed as parameter
- * @param subjectId The subject whose properties we are constructing
- * @param dataset The dataset to parse
- * @returns 
- */
-function parseDataset(graph : Graph, subjectId : SubjectId, dataset: Dataset<Quad, Quad>): object {
-  const props = {} 
-  const quads: Array<Quad> = Array.from(dataset['_quads'].values())
-  // This dataset.filter method is documented as part of the DatasetCore interface
-  // but it seems like it's not implemented yet. Need to reach out to that rdfjs community
-  // and maybe get implicated, help or whatever...
-  // dataset.filter
-
-  
-  quads.filter( (quad:Quad) => {
-      if (subjectId instanceof PropertyValueIdentifier) {
-        const asQuad = subjectId.toQuad()
-        return compareQuads(asQuad, quad.subject as Quad)
-      }
-      else {
-        // compare as normal IRI subjects
-        return (subjectId as IRISubjectId).iri == quad.subject.value
-      }
-    })
-    .forEach( quad => {
-      // console.log(quad)
-    let newVal
-    if (quad.object.termType == "NamedNode") {
-      newVal = graph.factory.subject(new IRISubjectId(quad.object.value))
-    }
-    else if (quad.object.termType == "Literal") {
-      newVal = quad.object //.value
-    }
-    if (props[quad.predicate.value] instanceof Array) {
-      props[quad.predicate.value].push(newVal)
-    }
-    else if (props[quad.predicate.value]) {
-      props[quad.predicate.value] = [props[quad.predicate.value], newVal]
-    }
-    else {
-      props[quad.predicate.value] = newVal
-    }    
-  })
-  // should we merge here instead? what are different kinds of ingestion of triples about this subject?    
-  return props
-}
-
 export const type_guards = {
   /**
    * Type quard for the DatasetIngeste type
@@ -841,6 +776,12 @@ export const type_guards = {
     || (subject instanceof Array && (subject.length == 0 || subject[0] instanceof SubjectImpl))
   },
 
+  isSubjectId(value): value is SubjectId|SubjectId[] {
+    let pred = (x) => x instanceof IRISubjectId || x instanceof PropertyValueIdentifier
+    return pred(value) || (value instanceof Array && 
+                   (value.length == 0 ||  pred(value[0])))
+  },
+
   isLiteralValue(literal): literal is LiteralValue|LiteralValue[] {
     return literal instanceof String || 
            typeof literal == "string" || 
@@ -852,10 +793,6 @@ export const type_guards = {
             typeof literal[0] === 'string' || 
             typeof literal[0] === 'boolean' || 
             typeof literal[0] === 'number'))
-  },
-  isRemoteDataSpec(dataSpec : DataSpec<any>) : dataSpec is RemoteDataSpec<any> {
-    const asRemote = dataSpec as RemoteDataSpec<any>
-    return asRemote.ingest !== undefined && asRemote.ready !== undefined
   },
 
   isSubjectChangeSynchronization(subject): subject is SubjectChangeSynchronization {
@@ -872,8 +809,21 @@ export const type_guards = {
     return (entity as Quad).termType == 'Quad'   
   },
   
-  isLiteral(entity: any): entity is Literal{ 
-    return (entity as Literal).termType == 'Literal'   
+  isLiteral(entity: any): entity is Literal { 
+    let pred = (x) => 
+      typeof x === "object" && 
+      x !== null && 
+      "termType" in x && 
+      x['termType'] == 'Literal'
+    return pred(entity) ||
+      (entity instanceof Array && 
+       (entity.length == 0 || (pred(entity[0]))))
+  },
+
+  isLiteralStruct(entity: any): entity is LiteralStruct { 
+    let pred = (x) => typeof x === "object" && x !== null && "value" in x
+    return pred(entity) || (entity instanceof Array && 
+                           (entity.length == 0 || pred(entity[0])))
   }
 
   // isThatLiterals(entity: NamedNode | BlankNode | Quad | Variable | Literal | Array<Literal>): entity is Literal|Literal[]{ 
@@ -1011,23 +961,36 @@ function copyShape(from: object) : object {
  * This is the Object based equivalent of an RDF triple
  */
 export class PropertyValueIdentifier implements SubjectId {
+  private hash: number = 0
+
   constructor(readonly subject: SubjectId, 
               readonly property: string,
               readonly value: _InternalPropertyValue) { }
   
+  hashCode(): number {
+    if (this.hash)
+      return this.hash
+    this.hash = this.subject.hashCode()
+    this.hash ^= (this.hash * 31) + Hashing.hashString(this.property)
+    this.hash |= 0
+    return this.hash
+  }
+
   equals(other: SubjectId) {
+    if (! (other instanceof PropertyValueIdentifier) )
+        return false
     const pvi =  other as PropertyValueIdentifier
     if (pvi.subject) {
       if (this.subject.equals(pvi.subject) && this.property == pvi.property) {
-        if (type_guards.isSubjectValue(this.value)) {
-          if (type_guards.isSubjectValue(pvi.value)) {
-            return this.value.id.equals(pvi.value.id)    
+        if (type_guards.isSubjectId(this.value)) {
+          if (type_guards.isSubjectId(pvi.value)) {
+            return this.value.equals(pvi.value)
           }
           else {
             return false
           } 
         }
-        else if (type_guards.isSubjectValue(pvi.value))
+        else if (type_guards.isSubjectId(pvi.value))
           return false
         else {
           return this.value.value == pvi.value.value
@@ -1056,7 +1019,7 @@ export class PropertyValueIdentifier implements SubjectId {
      * @returns 
      * TODO the value could be a meta subject which should be serialized as such as well
      */
-    const makeQuad = (subject : SubjectId, property: string, value: Subject|Literal) => {
+    const makeQuad = (subject : SubjectId, property: string, value: SubjectId|Literal) => {
       
       let subjectInQuad : Quad|NamedNode
       let propertyInQuad : NamedNode 
@@ -1073,14 +1036,14 @@ export class PropertyValueIdentifier implements SubjectId {
         throw new Error(`${subject} is an unsupported type of subject`)
       }
      
-      if (!type_guards.isSubjectValue(value)) {
+      if (type_guards.isLiteral(value)) {
         objectInQuad = value // rdfjs.literal(value)
       } 
-      else if (value.id instanceof IRISubjectId) {
-        objectInQuad = rdfjs.named(value.id.iri)
+      else if (value instanceof IRISubjectId) {
+        objectInQuad = rdfjs.named(value.iri)
       }
-      else if (value.id instanceof PropertyValueIdentifier) {
-        objectInQuad = makeQuad(value.id.subject, value.id.property, value.id.value)
+      else if (value instanceof PropertyValueIdentifier) {
+        objectInQuad = makeQuad(value.subject, value.property, value.value)
       }
       else {
         throw new Error (`${value} is not supported object value`)
@@ -1099,8 +1062,111 @@ export class PropertyValueIdentifier implements SubjectId {
       {
         subject : this.subject.toString(), //recursively serialize the subject ID -- this could be another PropertyValueIdentifier
         property: this.property,
-        value: (this.value as Subject).id || this.value //TODO this could be another property value id, so needs to be recursively 
+        value: this.value as SubjectId || this.value //TODO this could be another property value id, so needs to be recursively 
       }
     )
   }
+}
+
+class SubjectTripler implements Tripler<Subject> {
+
+  constructor(readonly graph: Graph) { }
+
+  async fetch(client: TripleStore, element: Subject): Promise<Subject> {
+    let quads = await client.fetch(rdfjs.named((element.id as IRISubjectId).iri))
+    this.ingest(element, quads)
+    return element
+  }
+
+  /**
+   * parse a dataset into individual's properties
+   * @param graph TODO only the factory is needed and it probably shouldn't be passed as parameter
+   * @param subjectId The subject whose properties we are constructing
+   * @param dataset The dataset to parse
+   * @returns 
+   */
+  private parseDataset(subjectId : SubjectId, dataset: Quads): object  {
+
+    const props = {} 
+    const quads: Array<Quad> = Array.from(dataset['_quads'].values())
+    // This dataset.filter method is documented as part of the DatasetCore interface
+    // but it seems like it's not implemented yet. Need to reach out to that rdfjs community
+    // and maybe get implicated, help or whatever...
+    // dataset.filter
+    
+    quads.filter( (quad:Quad) => {
+        if (subjectId instanceof PropertyValueIdentifier) {
+          const asQuad = subjectId.toQuad()
+          return compareQuads(asQuad, quad.subject as Quad)
+        }
+        else {
+          // compare as normal IRI subjects
+          return (subjectId as IRISubjectId).iri == quad.subject.value
+        }
+      })
+      .forEach( quad => {
+        // console.log(quad)
+      let newVal
+      if (quad.object.termType == "NamedNode") {
+        newVal = this.graph.factory.subject(new IRISubjectId(quad.object.value))
+      }
+      else if (quad.object.termType == "Literal") {
+        newVal = quad.object //.value
+      }
+      if (props[quad.predicate.value] instanceof Array) {
+        props[quad.predicate.value].push(newVal)
+      }
+      else if (props[quad.predicate.value]) {
+        props[quad.predicate.value] = [props[quad.predicate.value], newVal]
+      }
+      else {
+        props[quad.predicate.value] = newVal
+      }    
+    })
+    return props
+  }
+
+  ingest(element: Subject, rawdata: Quads): Subject {    
+    const impl = element as SubjectImpl
+    const props =this.parseDataset(impl.id, rawdata);
+    impl['properties'] = props    
+    //TODO ingest annotation data from the dataset 
+    // for (const entry of Object.entries(annotation)) {
+    //   this.annotation[entry[0]] = entry[1]
+    // }
+    return element
+  }
+}
+
+
+export class SubjectAnnotatedFactory implements DMEFactory<SubjectId, Subject> {
+  
+  private triplerImpl: Tripler<Subject>
+
+  constructor(readonly graph: Graph) {
+    this.triplerImpl = new SubjectTripler(graph)
+  } 
+
+  get elementType() {  return SubjectImpl }
+
+  identify(...args): SubjectId {
+    return args[0]  
+  }
+
+  make(...args): AnnotatedDomainElement<SubjectId, Subject> {
+    const id = args[0] as SubjectId
+    const graph = args[1]
+    const element = new SubjectImpl(id, graph)
+    let res = new AnnotatedDomainElement(id, element)
+    // no mentions for a subject....
+    return res
+  }
+
+  get tripler(): Tripler<Subject> {
+    return this.triplerImpl
+  }
+}
+
+export let basicDomainFactories = {
+  "subject" : (graph:Graph) => new SubjectAnnotatedFactory(graph)
 }

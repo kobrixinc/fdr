@@ -4,7 +4,7 @@ import { rdfjs } from "./fdr/fdr.js"
 import SPARQLProtocolClient from "./fdr/sparql-triplestore-client.js"
 
 function setupEndpoint(): SPARQLProtocolClient {
-  const endpointUrl = 'http://obelix:7200/repositories/starwars'
+  const endpointUrl = 'http://localhost:7200/repositories/starwars'
   let client = new SPARQLProtocolClient(endpointUrl, endpointUrl + "/statements")
   return client
 }
