@@ -17,6 +17,10 @@ let store = new SPARQLProtocolClient(endpointurl, endpointurl + "/statements")
 fdr.resolver.prefixResolver.withPrefixes(prefixes)
 
 
+const query0 = {
+  "@id": "https://swapi.co/resource/human/10"
+}
+
 const query1 = {
   "@id": "https://swapi.co/resource/human/10",
   "rdfs:label": null
@@ -55,6 +59,17 @@ const query6 = {
   "rdfs:label":null
 }
 
+const query7 = {
+  "@type": {"@id" : "voc:Human"},
+  "@fetch": "all", 
+  "voc:homeworld": {
+    "@type": "voc:Planet",
+    "rdfs:label": "Stewjon",
+    "voc:terrain": null,
+    "voc:resident": [{ "@type": { "@id": "voc:Droid"}}]
+  }
+}
+
 async function executeQuery(query: object): Promise<Array<object>> {
   console.log("Query: ", JSON.stringify(query))
   let pattern = RootQueryPattern.make(query)
@@ -64,6 +79,14 @@ async function executeQuery(query: object): Promise<Array<object>> {
   // result.map(x => JSON.stringify(x)).forEach(console.log)
   return result
 }
+
+it.only("ONE TEST DEBUGGING", async () =>   {
+  let result = await executeQuery(query4)
+  // assert.equal(result.length, 1)
+  // assert.equal(result[0]["rdfs:label"], "Obi-Wan Kenobi") 
+  console.log(JSON.stringify(result))
+}).timeout(10000)
+
 
 it("Fetch by ID with label", async () =>   {
   let result = await executeQuery(query1)
