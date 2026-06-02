@@ -203,7 +203,11 @@ export function nodeToString(x: TripleNode, shortForm? : boolean): string {
     return '"' + x.value + '"'
 }
 
-export class Triple {
+export interface SparqlPattern {
+  toString(): string
+}
+
+export class Triple implements SparqlPattern{
   constructor(readonly sub: TripleNode, 
               readonly pred: PathExpression, 
               readonly obj: TripleNode)
@@ -233,6 +237,28 @@ export class Triple {
   }
 }
 
+export class SparqlConjunction implements SparqlPattern {
+  
+  components: Array<SparqlPattern> = []
+  
+  constructor(readonly optional: boolean = false) {  }
+
+  add(...triples: Array<SparqlPattern>): SparqlPattern {
+    this.components.push.apply(this.components, triples)
+    return this
+  }
+
+  toString(): string {
+    return (this.optional ? "optional {\n" : "") +
+       this.components.map(t => "    " + t.toString()).join("\n")
+        + (this.optional ? "\n}\n" : "")
+  }
+
+  static make(optional:boolean, ...triples: Array<SparqlPattern>): SparqlPattern {
+    let conj = new SparqlConjunction(optional)
+    return conj.add(...triples)
+  }
+}
 
 class SparqlSelection {
   variables: Array<Var> = []
@@ -245,28 +271,18 @@ class SparqlSelection {
   }
 }
 
-class SparqlPattern { 
-  triples: Array<Triple> = []
+export class SparqlFilter {
+  constructor(readonly filters: Array<string> = []) {  
 
-  addTriples(triples: Array<Triple>): SparqlPattern {
-    this.triples.push.apply(this.triples, triples)
-    return this
-  }
-
+  }  
   toString(): string {
-    return this.triples.map(t => t.toString()).join("\n")
-  }
-}
-
-class SparqlFilter {
-  toString(): string {
-    return ""
+    return "\n    FILTER ( " + this.filters.join(" && ") + " )\n"
   }
 }
 
 export class SparqlSelect {
   selection: SparqlSelection = new SparqlSelection()
-  pattern: SparqlPattern = new SparqlPattern()
+  pattern: SparqlConjunction = new SparqlConjunction()
   filter: SparqlFilter = new SparqlFilter()
 
   get prefixes(): string {

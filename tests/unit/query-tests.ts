@@ -42,7 +42,7 @@ const query3 = {
 }
 
 const query4 = {
-  "@id": "https://swapi.co/vocabulary/Aleena",
+  "@id": "https://swapi.co/resource/human/88",
   "voc:skinColor": []
 }
 
@@ -70,6 +70,12 @@ const query7 = {
   }
 }
 
+const query8 = {
+  "@type": {"@id" : "voc:Planet"},
+  "voc:surfaceWater >": 20
+}
+
+
 async function executeQuery(query: object): Promise<Array<object>> {
   console.log("Query: ", JSON.stringify(query))
   let pattern = RootQueryPattern.make(query)
@@ -81,7 +87,7 @@ async function executeQuery(query: object): Promise<Array<object>> {
 }
 
 it.only("ONE TEST DEBUGGING", async () =>   {
-  let result = await executeQuery(query4)
+  let result = await executeQuery(query8)
   // assert.equal(result.length, 1)
   // assert.equal(result[0]["rdfs:label"], "Obi-Wan Kenobi") 
   console.log(JSON.stringify(result))

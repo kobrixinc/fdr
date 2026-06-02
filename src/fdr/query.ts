@@ -1,6 +1,6 @@
 import { Dataset, Literal, NamedNode, Quad, Term } from "@rdfjs/types"
 import { fdr, rdfjs } from "./fdr.js"
-import { TripleNode, PathExpression, QuerySubject, SparqlSelect, Triple, Var, nodeEquals, path } from "./sparql.js"
+import { TripleNode, PathExpression, QuerySubject, SparqlSelect, Triple, Var, nodeEquals, path, SparqlPattern, SparqlConjunction, SparqlFilter } from "./sparql.js"
 
 /*
 1. Reference to a different node with "@id": "@refvar" (same instance) [IMPLEMENTED, NOT TESTED]
@@ -13,8 +13,8 @@ import { TripleNode, PathExpression, QuerySubject, SparqlSelect, Triple, Var, no
      (a) modified property names
      (b) literal specs via directives, as objects
 6. Recursivity:
-   (a) simple linked list
-   (b) full object model with planets and humans and starships
+   (a) simple linked list (DONE)
+   (b) full object model with planets and humans and starships (NEED TO TEST)
 7. Is there a more elegant way to specify type than:
      "@type": {"@id" : "voc:Human"},
    something like "@type": "voc:Human", special treatment for a property to be interpreted as an IRI instead of literal      
@@ -45,28 +45,28 @@ class QueryPath {
               readonly constraints: Array<any> = []) { }
 }
 
-function sparqlFromPaths(pathList: Array<QueryPath>): SparqlSelect { 
-  let sparql = new SparqlSelect()
-  let root = new Var("root")
-  for (const p of pathList) {
-    sparql.selection.variables.push(p.variable)
-    sparql.pattern.triples.push(new Triple(
-      root,
-      p.path,
-      p.variable
-    ))
-    for (const c of p.constraints) {
-      // TODO
-    }
-    // All properties
-    sparql.pattern.triples.push(new Triple(
-      p.variable,
-      new Var(p.variable.name + "_prop"),
-      new Var(p.variable.name + "_val")
-    ))
-  }
-  return sparql
-}
+// function sparqlFromPaths(pathList: Array<QueryPath>): SparqlSelect { 
+//   let sparql = new SparqlSelect()
+//   let root = new Var("root")
+//   for (const p of pathList) {
+//     sparql.selection.variables.push(p.variable)
+//     sparql.pattern.triples.push(new Triple(
+//       root,
+//       p.path,
+//       p.variable
+//     ))
+//     for (const c of p.constraints) {
+//       // TODO
+//     }
+//     // All properties
+//     sparql.pattern.triples.push(new Triple(
+//       p.variable,
+//       new Var(p.variable.name + "_prop"),
+//       new Var(p.variable.name + "_val")
+//     ))
+//   }
+//   return sparql
+// }
 
 let varcount = 0
 function varnameFromProp(prop: string): string {
@@ -84,11 +84,18 @@ enum Operator {
   greaterThan = ">",
   lessThanOrEqual = "<=",
   greaterThanOrEqual = ">=",
+  required = "!",
+  optional = "?",
   any = "any"
 }
 
 function isOperator(val: string): val is Operator {
   return Object.values(Operator).includes(val as Operator);
+}
+
+function isFilteringOperator(val: string): val is Operator {
+  return isOperator(val) && 
+        ![Operator.required, Operator.optional, Operator.any].includes(val as Operator)
 }
 
 class LiteralObject {
@@ -148,7 +155,8 @@ export class QueryPattern {
   patternName: string | null = null
   pathCycle : PathCycle | null = null; 
   propMap: Record<string, LiteralObject | QueryPattern> = {}
-  multiplicity: Record<string, boolean> = {}
+  multiplicity: Record<string, boolean> = {} // which properties are to be multi-valued in the result
+  required:  Record<string, boolean> = {} // which properties are required as part of the result
   fetchAll: boolean = false
 
   fetchAllPropVar : Var | null = null
@@ -249,13 +257,13 @@ export class QueryPattern {
 
   protected parseOut(): QueryPattern {
     this.refVar = Var.make(this.struct["@ref"])
-    Object.keys(this.struct).forEach(key => {
-
-      let keyParts = key.split("\s+")
+    Object.keys(this.struct).forEach(fullkey => {
+      let key = fullkey
+      let keyParts = fullkey.split(/\s+/)
       if (keyParts.length > 1)
         key = keyParts[0]
 
-      let value = this.struct[key]
+      let value = this.struct[fullkey]
 
       if ("@ref" == key) {
         return
@@ -288,6 +296,10 @@ export class QueryPattern {
         this.fetchAll = true
         return
       }
+
+      let isoptional = keyParts.find(part => part == Operator.required || part == Operator.optional)
+      this.required[key] = ("?" != isoptional)
+      let operator = keyParts.find(part => isFilteringOperator(part)) as Operator || Operator.any
 
       if (Array.isArray(value)) {
         this.multiplicity[key] = true
@@ -374,37 +386,42 @@ export class QueryPattern {
     return result
   }
 
-  get triples(): Array<Triple> {
-    let result: Array<Triple> = []
+  get triples(): SparqlPattern {
+    let result: SparqlConjunction = new SparqlConjunction()
     Object.keys(this.propMap)
       .filter(k => k != "@id" && !this.root().isPropertyInPathExression(this, k))
       .forEach(key => {      
         let v = this.propMap[key]
         let pred = path.predicate(rdfjs.named(key))
+        let triples: SparqlPattern[]
         if (v instanceof LiteralObject) {
           if (v.operator == Operator.equals) {
-            result.push(new Triple(this.subject, 
+            triples = [new Triple(this.subject, 
                                   pred, 
-                                  rdfjs.literal(v.value!, v.language)))
+                                  rdfjs.literal(v.value!, v.language))]
           }
           else {
-            result.push(new Triple(this.subject, pred, v.variable!))
+            triples = [new Triple(this.subject, pred, v.variable!)]
             if (v.operator != Operator.any) {
-              this.sparqlFilters.push(v.variable + " " + v.operator + " '" + v.value + "'")
+              let quoted = v.value
+              if (typeof v.value == "string")
+                quoted = "'" + v.value + "'"
+              this.sparqlFilters.push(v.variable + " " + v.operator + " " + quoted)
             }
           }
         }
         else {
-          result.push(new Triple(this.subject, 
+          triples = [new Triple(this.subject, 
                                  pred, 
-                                 (v as QueryPattern).subject))
-          result.push.apply(result, (v as QueryPattern).triples)
+                                 (v as QueryPattern).subject),
+                      (v as QueryPattern).triples]
         }
+        result.add(new SparqlConjunction(!this.required[key]).add(...triples))
     })
     if (this.fetchAll) {
       this.fetchAllPropVar = Var.make(varnameFromProp("fdr:allprops"))
       this.fetchAllValueVar = Var.make(varnameFromProp("fdr:allvalues"))
-      result.push(new Triple(this.subject, this.fetchAllPropVar, this.fetchAllValueVar))
+      result.add(new Triple(this.subject, this.fetchAllPropVar, this.fetchAllValueVar))
     }
     return result  
   }
@@ -684,8 +701,9 @@ export class RootQueryPattern extends QueryPattern {
   }
   toSparql(): SparqlSelect {
     let select = new SparqlSelect()
-    select.pattern.addTriples(this.triples)
-    select.pattern.addTriples(this.pathExpressionTriples)    
+    select.pattern.add(this.triples)
+    select.pattern.add(this.pathExpressionTriples)      
+    select.filter = new SparqlFilter(this.sparqlFilters)
     return select
   }
 
