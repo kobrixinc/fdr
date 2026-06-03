@@ -276,7 +276,10 @@ export class SparqlFilter {
 
   }  
   toString(): string {
-    return "\n    FILTER ( " + this.filters.join(" && ") + " )\n"
+    if (this.filters.length == 0)
+      return ""
+    else
+      return "\n    FILTER ( " + this.filters.join(" && ") + " )\n"
   }
 }
 

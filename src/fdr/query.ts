@@ -402,7 +402,7 @@ export class QueryPattern {
           }
           else {
             triples = [new Triple(this.subject, pred, v.variable!)]
-            if (v.operator != Operator.any) {
+            if (isFilteringOperator(v.operator)) {
               let quoted = v.value
               if (typeof v.value == "string")
                 quoted = "'" + v.value + "'"
@@ -625,7 +625,9 @@ export class RootQueryPattern extends QueryPattern {
      * @param value The value to assign
      */
     function assignValue(prop, node, pattern, value): object {    
-      // if (!pattern.isPattern(prop) && typeof value == "object") {
+      
+      if (typeof value === "undefined") return node
+
       if (typeof value == "object") {
         if ("literal" == value['type'])
           value = value.value
@@ -702,7 +704,7 @@ export class RootQueryPattern extends QueryPattern {
   toSparql(): SparqlSelect {
     let select = new SparqlSelect()
     select.pattern.add(this.triples)
-    select.pattern.add(this.pathExpressionTriples)      
+    select.pattern.add(new SparqlConjunction().add(...this.pathExpressionTriples))
     select.filter = new SparqlFilter(this.sparqlFilters)
     return select
   }

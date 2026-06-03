@@ -42,7 +42,7 @@ const query3 = {
 }
 
 const query4 = {
-  "@id": "https://swapi.co/resource/human/88",
+  "@id": "voc:Aleena",
   "voc:skinColor": []
 }
 
@@ -64,7 +64,7 @@ const query7 = {
   "@fetch": "all", 
   "voc:homeworld": {
     "@type": "voc:Planet",
-    "rdfs:label": "Stewjon",
+    "rdfs:label": null,
     "voc:terrain": null,
     "voc:resident": [{ "@type": { "@id": "voc:Droid"}}]
   }
@@ -75,6 +75,10 @@ const query8 = {
   "voc:surfaceWater >": 20
 }
 
+const query9 = {
+  "@type": {"@id" : "voc:Planet"},
+  "voc:surfaceWater ?": null
+}
 
 async function executeQuery(query: object): Promise<Array<object>> {
   console.log("Query: ", JSON.stringify(query))
@@ -86,13 +90,18 @@ async function executeQuery(query: object): Promise<Array<object>> {
   return result
 }
 
-it.only("ONE TEST DEBUGGING", async () =>   {
+it("ONE TEST DEBUGGING", async () =>   {
   let result = await executeQuery(query8)
   // assert.equal(result.length, 1)
   // assert.equal(result[0]["rdfs:label"], "Obi-Wan Kenobi") 
   console.log(JSON.stringify(result))
 }).timeout(10000)
 
+it("Fetch by ID with no properties", async () =>   {
+  let result = await executeQuery(query0)
+  assert.equal(result.length, 1)
+  assert.equal(result[0]["@id"], query0["@id"]) 
+}).timeout(10000)
 
 it("Fetch by ID with label", async () =>   {
   let result = await executeQuery(query1)
@@ -174,3 +183,194 @@ it("Fetch all humans on Stewjon with all their properties", async () =>   {
     "https://swapi.co/resource/starship/59"
   ])
 }).timeout(20000)
+
+
+it("Fetch multi-valued skinColor property for Aleena", async () => {
+  const result = await executeQuery(query4);
+
+  // 1. Verify structure
+  expect(result).to.be.an('array').with.lengthOf(1);
+
+  // 2. Check identity
+  expect(result[0]["@id"]).to.equal("voc:Aleena");
+
+  // 3. Verify multi-valued property regardless of order
+  // .have.members checks for exact set equality (ignores order)
+  expect(result[0]["voc:skinColor"])
+    .to.be.an('array')
+    .to.have.members(["blue", "gray"]);
+
+  // Note: if you only wanted to check that it contains these WITHOUT 
+  // failing if extra colors are added later, you would use .include.members
+}).timeout(10000);
+
+it("Fetch character with nested films, labels, and IRIs", async () => {
+  const result = await executeQuery(query5);
+
+  expect(result).to.be.an('array').with.lengthOf(1);
+  const character = result[0];
+  const films = character["voc:film"];
+
+  // 1. Verify we have the full set of films
+  expect(films).to.be.an('array').with.lengthOf(6);
+
+  // 2. Spot check specific films by their full object structure
+  // Using deep.include allows us to check for specific objects within the array
+  expect(films).to.deep.include({
+    "@id": "https://swapi.co/resource/film/1",
+    "rdf:type": { "@id": "voc:Film" },
+    "rdfs:label": "A New Hope"
+  });
+
+  expect(films).to.deep.include({
+    "@id": "https://swapi.co/resource/film/6",
+    "rdf:type": { "@id": "voc:Film" },
+    "rdfs:label": "Revenge of the Sith"
+  });
+
+  // 3. Alternatively, if you want to check just the IDs and Labels more cleanly:
+  const filmSummary = films.map(f => ({ id: f["@id"], label: f["rdfs:label"] }));
+
+  expect(filmSummary).to.deep.include({ 
+    id: "https://swapi.co/resource/film/2", 
+    label: "The Empire Strikes Back" 
+  })
+}).timeout(10000)
+
+it("Fetch recursive FOAF knows chain for Obi-Wan", async () => {
+  const result = await executeQuery(query6);
+
+  // 1. Root: Obi-Wan (Human 10)
+  expect(result).to.be.an('array').with.lengthOf(1);
+  const obiWan = result[0];
+  expect(obiWan["@id"]).to.equal("https://swapi.co/resource/human/10");
+  expect(obiWan["rdfs:label"]).to.equal("Obi-Wan Kenobi");
+
+  // 2. Level 1: Knows Human 5 (Leia)
+  const level1 = obiWan["foaf:knows"];
+  expect(level1["@id"]).to.equal("https://swapi.co/resource/human/5");
+
+  // 3. Level 2: Knows Human 1 (Luke)
+  const level2 = level1["foaf:knows"];
+  expect(level2["@id"]).to.equal("https://swapi.co/resource/human/1");
+
+  // 4. Level 3: Luke knows an ARRAY [Human 14, Human 4]
+  const level3 = level2["foaf:knows"];
+  expect(level3).to.be.an('array').with.lengthOf(2);
+
+  // We check for members using deep.include to ignore order
+  // Check for Han Solo (Human 14) branch
+  expect(level3).to.be.deep.include({
+    "@id": "https://swapi.co/resource/human/14",
+    "foaf:knows": {
+      "@id": "https://swapi.co/resource/human/25"
+    }
+  });
+
+  // Check for Darth Vader (Human 4) branch
+  expect(level3).to.be.deep.include({
+    "@id": "https://swapi.co/resource/human/4",
+    "foaf:knows": {
+      "@id": "https://swapi.co/resource/human/35",
+      "foaf:knows": {
+        "@id": "https://swapi.co/resource/human/11"
+      }
+    }
+  });
+}).timeout(10000)
+
+it("Fetch humans on planets with droid residents", async () => {
+  const result = await executeQuery(query7);
+
+  // 1. Basic result check
+  expect(result).to.be.an('array').with.length.at.least(2);
+
+  // Helper to find a specific human by label
+  const findHuman = (label: string) => result.find((h: any) => h["rdfs:label"] === label);
+
+  // 2. Test Planet: Tatooine (checking Darth Vader)
+  const vader = findHuman("Darth Vader");
+  expect(vader, "Darth Vader should be in the result").to.exist;
+
+  // a) Test @fetch: all 
+  expect(vader).to.have.property("voc:skinColor", "white");
+  expect(vader).to.have.property("voc:eyeColor", "yellow");
+  expect(vader).to.have.property("voc:height", "202.0");
+
+  // b) Test Planet properties & Droid requirement
+  const tatooine = vader!["voc:homeworld"];
+  expect(tatooine["rdfs:label"]).to.equal("Tatooine");
+  expect(tatooine["voc:terrain"]).to.equal("desert");
+  
+  const tatooineDroids = tatooine["voc:resident"].map((r: any) => r["@id"]);
+  expect(tatooineDroids).to.include("https://swapi.co/resource/droid/2");
+
+  // 3. Test Planet: Naboo (checking Padmé Amidala)
+  const padme = findHuman("Padmé Amidala");
+  expect(padme, "Padmé should be in the result").to.exist;
+
+  const naboo = padme!["voc:homeworld"];
+  expect(naboo["rdfs:label"]).to.equal("Naboo");
+  // CRITICAL: Ensure this uses bracket notation
+  expect(naboo["voc:terrain"]).to.contain("swamps");
+
+  const nabooDroids = naboo["voc:resident"].map((r: any) => r["@id"]);
+  expect(nabooDroids).to.include("https://swapi.co/resource/droid/3");
+
+  // 4. Verify multiple humans from the same planet
+  const humanLabels = result.map((h: any) => h["rdfs:label"]);
+  expect(humanLabels).to.include.members(["Padmé Amidala", "Palpatine", "Gregar Typho"]);
+}).timeout(10000)
+
+it("Test arithmetic operator filter: planets with surfaceWater strictly greater than 20", async () => {
+  const result = await executeQuery(query8);
+
+  // 1. Basic collection check
+  expect(result).to.be.an('array').and.not.be.empty;
+
+  // 2. Loop through every returned planet to enforce the filter rule
+  result.forEach((planet: any) => {
+    // Ensure the property exists on every item
+    expect(planet).to.have.property("voc:surfaceWater");
+
+    // Convert the string-encoded RDF literal to a real number for comparison
+    const waterValue = parseFloat(planet["voc:surfaceWater"]);
+
+    // Assert that the condition (> 20) holds true for this item
+    expect(waterValue).to.be.greaterThan(20, 
+      `Planet ${planet["@id"]} failed the filter with a value of ${planet["voc:surfaceWater"]}`
+    );
+  });
+}).timeout(10000)
+
+it("Fetch with a single optional attribute: planets with maybe surfaceWater", async () => {
+  const result = await executeQuery(query9);
+
+  // 1. Ensure we got a rich array back
+  expect(result).to.be.an('array').with.length.at.least(40);
+
+  // 2. Separate planets with surfaceWater from those without
+  const planetsWithWater = result.filter((p: any) => p.hasOwnProperty("voc:surfaceWater"));
+  const planetsWithoutWater = result.filter((p: any) => !p.hasOwnProperty("voc:surfaceWater"));
+
+  // 3. Assert that both query groups exist (proving OPTIONAL mechanism works)
+  expect(planetsWithWater.length).to.be.greaterThan(0);
+  expect(planetsWithoutWater.length).to.be.greaterThan(0);
+
+  // 4. Spot check specific content to be sure the mapping is flawless
+  
+  // Planet 25 has no surface water
+  const planet25 = result.find((p: any) => p["@id"] === "https://swapi.co/resource/planet/25");
+  expect(planet25).to.exist;
+  expect(planet25).to.not.have.property("voc:surfaceWater");
+
+  // Planet 4 (Hoth/Alderaan depending on mapping) has 100 surface water
+  const planet4 = result.find((p: any) => p["@id"] === "https://swapi.co/resource/planet/4");
+  expect(planet4).to.exist;
+  expect(planet4!["voc:surfaceWater"]).to.equal("100");
+
+  // Planet 12 has a decimal point "0.9"
+  const planet12 = result.find((p: any) => p["@id"] === "https://swapi.co/resource/planet/12");
+  expect(planet12).to.exist;
+  expect(planet12!["voc:surfaceWater"]).to.equal("0.9");
+}).timeout(10000)
