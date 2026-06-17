@@ -205,6 +205,7 @@ export function nodeToString(x: TripleNode, shortForm? : boolean): string {
 
 export interface SparqlPattern {
   toString(): string
+  isEmpty(): boolean
 }
 
 export class Triple implements SparqlPattern{
@@ -226,6 +227,9 @@ export class Triple implements SparqlPattern{
           nodeEquals(this.obj, other.obj)
   }
 
+  isEmpty(): boolean {
+      return false
+  }
   /**
    * Return a string suitable for Turtle/SPARQL output.
    */
@@ -233,7 +237,7 @@ export class Triple implements SparqlPattern{
     return nodeToString(this.sub) + " " + 
            this.pred.toString(true) + " " +
            // + this.pred.toString() + " " + 
-           nodeToString(this.obj) + " ."
+           nodeToString(this.obj)
   }
 }
 
@@ -243,14 +247,18 @@ export class SparqlConjunction implements SparqlPattern {
   
   constructor(readonly optional: boolean = false) {  }
 
-  add(...triples: Array<SparqlPattern>): SparqlPattern {
-    this.components.push.apply(this.components, triples)
+  add(...components: Array<SparqlPattern>): SparqlPattern {
+    this.components.push.apply(this.components, components.filter(c => !c.isEmpty()))
     return this
+  }
+
+  isEmpty(): boolean {
+    return this.components.length == 0
   }
 
   toString(): string {
     return (this.optional ? "optional {\n" : "") +
-       this.components.map(t => "    " + t.toString()).join("\n")
+       this.components.map(t => "    " + t.toString()).join(" . \n")
         + (this.optional ? "\n}\n" : "")
   }
 

@@ -3,7 +3,7 @@ import { fdr, fdrmake }  from "../../src/fdr/fdr.js"
 import SPARQLProtocolClient from "../../src/fdr/sparql-triplestore-client.js"
 import { DomainAnnotatedFactories, ResolverHolder, basicDomainFactories } from "../../src/index.js"
 import entityFactories, { attribute, entity, relation } from "../../src/fdr/entity-factory.js"
-import { RootQueryPattern } from "../../src/fdr/query.js"
+import { RootQueryPattern, safeStringify } from "../../src/fdr/query.js"
 
 const prefixes: {[key: string]: any}  = {
   "voc": "https://swapi.co/vocabulary/",
@@ -80,6 +80,30 @@ const query9 = {
   "voc:surfaceWater ?": null
 }
 
+const query10 = {
+  "@type": {"@id" : "voc:Planet"},
+  "@ref": "planet",
+  "voc:resident": {
+    "@type": {"@id" : "voc:Human"}, 
+    "rdfs:label": null,
+    "voc:homeworld": { "@pattern": "planet" }
+  },
+  "rdfs:label": null,
+  "voc:population": null,
+  "voc:climate": null
+  // ,
+  // "voc:film": {
+  //   "rdfs:label": null,
+  //   "voc:character": {
+  //     "@type": {"@id" : "voc:Human"}, 
+  //     "rdfs:label": null,
+  //     "voc:pilot": { 
+  //       "voc:film": { "@fetchAll": true }
+  //     }
+  //   }
+  // }
+}
+
 async function executeQuery(query: object): Promise<Array<object>> {
   console.log("Query: ", JSON.stringify(query))
   let pattern = RootQueryPattern.make(query)
@@ -90,11 +114,12 @@ async function executeQuery(query: object): Promise<Array<object>> {
   return result
 }
 
-it("ONE TEST DEBUGGING", async () =>   {
-  let result = await executeQuery(query8)
+it.only("ONE TEST DEBUGGING", async () =>   {
+  let result = await executeQuery(query10)
   // assert.equal(result.length, 1)
   // assert.equal(result[0]["rdfs:label"], "Obi-Wan Kenobi") 
-  console.log(JSON.stringify(result))
+  // console.log(JSON.stringify(result))
+  safeStringify(result)
 }).timeout(10000)
 
 it("Fetch by ID with no properties", async () =>   {

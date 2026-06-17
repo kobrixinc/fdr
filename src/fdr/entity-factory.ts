@@ -376,7 +376,7 @@ class EntityTripler implements Tripler<object> {
 
   }
 
-  async fetch(client: TripleStore, element: object): Promise<object> {
+  async fetchnew(client: TripleStore, element: object): Promise<object> {
     let model = this.classModel
     let subjectVar = Var.make()
     let triples: Array<Triple> = []
@@ -399,7 +399,7 @@ class EntityTripler implements Tripler<object> {
     return element
   }
 
-  async fetch2(client: TripleStore, element: object): Promise<object> {
+  async fetch(client: TripleStore, element: object): Promise<object> {
     let pattern = {
       "@type": this.classModel.typeIri,
       "@id": this.classModel.produceIri(element)

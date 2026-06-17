@@ -35,10 +35,52 @@ export const DIRECTIVES = {
   }
 }
 
-function safeStringify(obj: any) {
+function sortOfsafeStringify(obj: any) {
   return JSON.stringify(Object.assign({}, obj), null, 2)  
 }
 
+export function safeStringify(obj: any, maxDepth: number = 4): string {
+  const seen = new WeakSet();
+
+  function grow(value: any, currentDepth: number): any {
+    // 1. Cut off if we exceed max depth
+    if (currentDepth > maxDepth) {
+      return "[Max Depth Reached]";
+    }
+
+    // 2. Handle primitives and nulls
+    if (typeof value !== "object" || value === null) {
+      return value;
+    }
+
+    // 3. Catch circular references
+    if (seen.has(value)) {
+      return "[Circular]";
+    }
+
+    // Add object to seen tracking
+    seen.add(value);
+
+    // 4. Handle Arrays recursively
+    if (Array.isArray(value)) {
+      return value.map(item => grow(item, currentDepth + 1));
+    }
+
+    // 5. Handle Objects recursively
+    const serializedObj: Record<string, any> = {};
+    for (const key in value) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) {
+        serializedObj[key] = grow(value[key], currentDepth + 1);
+      }
+    }
+    
+    // Remove object from tracking so it can be safely used in sibling branches
+    seen.delete(value);
+    return serializedObj;
+  }
+
+  return JSON.stringify(grow(obj, 0), null, 2);
+}
 class QueryPath {
   constructor(readonly variable: Var, 
               readonly path: PathExpression,
@@ -98,14 +140,23 @@ function isFilteringOperator(val: string): val is Operator {
         ![Operator.required, Operator.optional, Operator.any].includes(val as Operator)
 }
 
-class LiteralObject {
+abstract class QueryNode {
   parent: QueryPattern | null = null
+  constructor(parent: QueryPattern | null = null) { 
+    this.parent = parent
+  }
+
+  abstract get tripleNode(): TripleNode
+}
+
+class LiteralObject extends QueryNode {
   variable: Var | null = null
 
   constructor(readonly operator: Operator, 
               readonly value: string | null = null, 
               readonly datatype: string = "xsd:string", 
               readonly language: string = "@eng") { 
+      super(null)
   }
 
   queryContext(parent: QueryPattern, variable: Var): LiteralObject {
@@ -113,48 +164,117 @@ class LiteralObject {
     this.variable = variable
     return this
   }
+
+  get tripleNode(): TripleNode {
+    return this.variable!
+  }
+}
+
+interface NodeVariableProvider {
+  get node(): QueryNode
+  get refvar(): Var
+  property(prop: string): NodeVariableProvider
+}
+
+/**
+ * A path cycle is a chain of properties starting at some need in the query tree
+ * and ending at another node which recursively call out (via the @pattern directive)
+ * a repeat of the chain starting from the first node. 
+ * 
+ * This translate to a (x/y/z)+ path expression where at least one occurrence is expected
+ * but there maybe more. To handle more than one occurrence we have to generate fresh variables
+ * to represent additional cycles of the pattern.
+ * 
+ * The very first instantiation of the path needs to be anchored at the root of pattern match (e.g.
+ * the head of a recursive list) and as such it gets its own copy of all triples using the 
+ * originally assigne variables.
+ * 
+ * Then to capture repeated cycles, for every QueryPattern node on the path, we need fresh variable representing it 
+ * and all its property values.  
+ * 
+ * These fresh variable are kept in a separate property map that we keep in the PathCycle so we can 
+ * reconstruct the pattern from the SPARQL result bindings.
+ */
+
+class PatternNodeVariables implements NodeVariableProvider {
+  propMap: Record<string, PatternNodeVariables> = {}
+  constructor(readonly node :QueryNode, readonly refvar: Var) { }
+
+  property(prop: string): PatternNodeVariables {
+    return this.propMap[prop]
+  }
+}
+
+class QueryNodeVariables implements NodeVariableProvider {
+  constructor(readonly node :QueryNode) { }
+  get refvar(): Var { 
+    if (this.node instanceof LiteralObject)
+      return (this.node as LiteralObject).variable!
+    else
+      return (this.node as QueryPattern).refvar
+  }
+  property(prop: string): QueryNodeVariables {
+    return new QueryNodeVariables((this.node as QueryPattern).propMap[prop])
+  }
 }
 
 class PathCycle {
-  firstOccurrenceVariables = {} // prop -> varname
+  firstOccurrenceVariables = {} // prop -> PatternNodeVariables
+  startFresh: PatternNodeVariables 
   cycleVariables = {}  
   constructor(readonly startPattern: QueryPattern, 
               readonly endPattern: QueryPattern, 
               readonly path: Array<string>) {
-    path.forEach(p => this.firstOccurrenceVariables[p] = varnameFromProp(p))
-    path.forEach(p => this.cycleVariables[p] = varnameFromProp(p))            
+    // path.forEach(p => this.firstOccurrenceVariables[p] = varnameFromProp(p))
+    // path.forEach(p => this.cycleVariables[p] = varnameFromProp(p))            
+    this.startFresh  =  new PatternNodeVariables(this.startPattern, this.startPattern.refVar)
   }
 
-  get triples(): Array<Triple> {
-    let triples: Array<Triple> = []
+  get triples(): SparqlConjunction {
+    let triples: SparqlConjunction = new SparqlConjunction()
     let thepath = path.plus(path.sequence(...this.path.map(p => path.predicate(rdfjs.named(p)))))
-    triples.push(new Triple(this.startPattern.subject, thepath, this.endPattern.subject))
+    triples.add(new Triple(this.startPattern.subject, thepath, this.endPattern.subject))
 
-    let subject = this.startPattern.subject
+    let subjectPattern = this.startPattern
+    let subject = subjectPattern.subject
     for (const p of this.path) {
-      let object = Var.make(this.firstOccurrenceVariables[p])
-      triples.push(new Triple(subject, path.predicate(rdfjs.named(p)), object))
+      let object = Var.make(varnameFromProp(p))  //Var.make(this.firstOccurrenceVariables[p])
+      let objectPattern = subjectPattern.propMap[p] as QueryPattern      
+      triples.add(new Triple(subject, path.predicate(rdfjs.named(p)), object))
+      let triplesAs = objectPattern.triplesAs(object, true)
+      triples.add(triplesAs.sparql)
+      this.firstOccurrenceVariables[p] = triplesAs.freshvars!
+      subjectPattern = objectPattern
       subject = object
     }
 
-    subject = this.endPattern.subject
+    subjectPattern = this.startPattern // we are doing a recursion now, starting node same as startPattern
+    subject = this.endPattern.subject // however, the variable has to be from endPattern node capturing the new occurrence
+    let triplesAs = subjectPattern.triplesAs(subject, true)
+    triples.add(triplesAs.sparql)
+    this.startFresh = triplesAs.freshvars!
     for (const p of this.path) {
-      let object = Var.make(this.cycleVariables[p])
-      triples.push(new Triple(subject, path.predicate(rdfjs.named(p)), object))
+      let object =  Var.make(varnameFromProp(p))//Var.make(this.cycleVariables[p])
+      let objectPattern = subjectPattern.propMap[p] as QueryPattern  
+      triples.add(new Triple(subject, path.predicate(rdfjs.named(p)), object))
+      let triplesAs = objectPattern.triplesAs(object, true)
+      triples.add(triplesAs.sparql)
+      this.cycleVariables[p] = triplesAs.freshvars!
+      subjectPattern = objectPattern
       subject = object
     }
     return triples
   }
 }
 
-export class QueryPattern {
+export class QueryPattern extends QueryNode {
   // Used both as a SPARQL variable representing this pattern and for recursive references
   // can be user provided and it has to be unique for the entire pattern or auto-generated.
   refvar: Var = new Var("")
   iri: string | null = null // known @id, if provided
   patternName: string | null = null
   pathCycle : PathCycle | null = null; 
-  propMap: Record<string, LiteralObject | QueryPattern> = {}
+  propMap: Record<string, QueryNode> = {}
   multiplicity: Record<string, boolean> = {} // which properties are to be multi-valued in the result
   required:  Record<string, boolean> = {} // which properties are required as part of the result
   fetchAll: boolean = false
@@ -299,7 +419,7 @@ export class QueryPattern {
 
       let isoptional = keyParts.find(part => part == Operator.required || part == Operator.optional)
       this.required[key] = ("?" != isoptional)
-      let operator = keyParts.find(part => isFilteringOperator(part)) as Operator || Operator.any
+      // let operator = keyParts.find(part => isFilteringOperator(part)) as Operator || Operator.any
 
       if (Array.isArray(value)) {
         this.multiplicity[key] = true
@@ -357,8 +477,13 @@ export class QueryPattern {
   get refVar(): Var { return this.refvar }
 
   constructor(readonly parent: QueryPattern | null, readonly struct: object) { 
+    super(parent)
   }
   
+  get tripleNode(): TripleNode {
+    return this.subject
+  }
+
   get subject(): QuerySubject | Var {
     if (this.iri) {
       if (this.iri.startsWith("@"))
@@ -375,19 +500,28 @@ export class QueryPattern {
     return (this.pathCycle != null && this.pathCycle.endPattern == this)
   }
 
-  get pathExpressionTriples(): Array<Triple> {
-    let result: Array<Triple> = []
+  get pathExpressionTriples(): SparqlConjunction {
+    let result: SparqlConjunction = new SparqlConjunction()
     if (this.pathCycle) {
-      result.push.apply(result, this.pathCycle.triples)
+      result.add(this.pathCycle.triples)
     }    
     else for (const child of Object.values(this.propMap).filter(v => v instanceof QueryPattern)) {
-      result.push.apply(result, (child as QueryPattern).pathExpressionTriples)
+      result.add((child as QueryPattern).pathExpressionTriples)
     }
     return result
   }
 
   get triples(): SparqlPattern {
-    let result: SparqlConjunction = new SparqlConjunction()
+    return this.triplesAs(this.subject ).sparql
+  }
+
+  triplesAs(subject: TripleNode, make_fresh_vars: boolean = false): 
+      {sparql: SparqlPattern, freshvars: PatternNodeVariables | undefined} {
+    let result: SparqlConjunction = new SparqlConjunction()        
+    let freshvars: PatternNodeVariables | undefined = undefined
+    if (make_fresh_vars) {
+      freshvars = new PatternNodeVariables(this, subject as Var)
+    }  
     Object.keys(this.propMap)
       .filter(k => k != "@id" && !this.root().isPropertyInPathExression(this, k))
       .forEach(key => {      
@@ -395,38 +529,54 @@ export class QueryPattern {
         let pred = path.predicate(rdfjs.named(key))
         let triples: SparqlPattern[]
         if (v instanceof LiteralObject) {
+          let thevar = v.variable
+          if (make_fresh_vars) {
+            thevar = Var.make(varnameFromProp(key))
+            freshvars!.propMap[key] = new PatternNodeVariables(v, thevar)
+          }
           if (v.operator == Operator.equals) {
-            triples = [new Triple(this.subject, 
+            triples = [new Triple(subject, 
                                   pred, 
                                   rdfjs.literal(v.value!, v.language))]
           }
           else {
-            triples = [new Triple(this.subject, pred, v.variable!)]
+            triples = [new Triple(subject, pred, thevar!)]
             if (isFilteringOperator(v.operator)) {
               let quoted = v.value
               if (typeof v.value == "string")
                 quoted = "'" + v.value + "'"
-              this.sparqlFilters.push(v.variable + " " + v.operator + " " + quoted)
+              this.sparqlFilters.push(thevar + " " + v.operator + " " + quoted)
             }
           }
         }
         else {
-          triples = [new Triple(this.subject, 
-                                 pred, 
-                                 (v as QueryPattern).subject),
-                      (v as QueryPattern).triples]
+          let object = (v as QueryPattern).subject
+          triples = [new Triple(subject, 
+            pred, 
+            object)]
+          let nestedTriples: SparqlPattern
+          if (make_fresh_vars && object instanceof Var) {
+            object = Var.make(varnameFromProp(key))            
+            let triplesAs = (v as QueryPattern).triplesAs(object, true)
+            freshvars!.propMap[key] = triplesAs.freshvars!
+            nestedTriples = triplesAs.sparql
+          }         
+          else
+            nestedTriples = (v as QueryPattern).triples
+          if (!nestedTriples.isEmpty())
+            triples.push(nestedTriples)
         }
         result.add(new SparqlConjunction(!this.required[key]).add(...triples))
     })
     if (this.fetchAll) {
       this.fetchAllPropVar = Var.make(varnameFromProp("fdr:allprops"))
       this.fetchAllValueVar = Var.make(varnameFromProp("fdr:allvalues"))
-      result.add(new Triple(this.subject, this.fetchAllPropVar, this.fetchAllValueVar))
+      result.add(new Triple(subject, this.fetchAllPropVar, this.fetchAllValueVar))
     }
-    return result  
+    return {sparql: result, freshvars: freshvars}  
   }
 
-  iriFromBinding(binding: object): string {
+  iriFromBinding(binding: object, refvar: Var = this.refVar): string {
     if (this.iri) {
       if (!this.iri.startsWith("@"))
         return this.iri
@@ -437,7 +587,7 @@ export class QueryPattern {
       }
     }
     else
-      return binding[this.refVar.name].value
+      return binding[refvar.name].value
   }
 
   root(): RootQueryPattern { 
@@ -538,33 +688,57 @@ export class RootQueryPattern extends QueryPattern {
              ensureNode(rootId)     
     }
 
-    function connectPathOccurrence(rootId: string, cycle: PathCycle, binding: object) {
+    function connectPathOccurrence(cycle: PathCycle, binding: object) {
       let currentNode = ensureNode(cycle.startPattern.iriFromBinding(binding))
+      let currentPattern = cycle.startPattern
       for (let p of cycle.path) {
-        let next = ensureNode(binding[cycle.firstOccurrenceVariables[p]].value)
-        assignValue(p, currentNode, cycle.startPattern, next)
+        // let next = ensureNode(binding[cycle.firstOccurrenceVariables[p].refvar.name].value)
+        let next: PatternNodeVariables = cycle.firstOccurrenceVariables[p]
+        let object = connectPattern(next.node as QueryPattern, next, binding) // cycle.startPattern, cycle.startPattern.property(p), binding)
+        assignValue(p, currentNode, currentPattern, object)
         currentNode = next
+        currentPattern = next.node as QueryPattern
       }
 
       currentNode = ensureNode(cycle.endPattern.iriFromBinding(binding))
+      currentPattern = cycle.endPattern
       for (let p of cycle.path) {
-        let next = ensureNode(binding[cycle.cycleVariables[p]].value)
-        assignValue(p, currentNode, cycle.endPattern, next)
-        currentNode = next
+        // let next = ensureNode(binding[cycle.cycleVariables[p].refvar.name].value)
+        // assignValue(p, currentNode, cycle.endPattern, next)
+        // currentNode = next
+        let next: PatternNodeVariables = cycle.cycleVariables[p]
+        let object = connectPattern(next.node as QueryPattern, next, binding) // cycle.startPattern, cycle.startPattern.property(p), binding)
+        assignValue(p, currentNode, currentPattern, object)
+        currentNode = object
+        currentPattern = next.node as QueryPattern
       }
   
     }
 
-    function connectPattern(rootId: string, pattern: QueryPattern, binding: object): object {
-      let node = ensureNode(pattern.iriFromBinding(binding))
+    function connectPathCycles(pattern: QueryPattern, binding: object){ 
+      if (pattern.isCycleEnd) 
+        connectPathOccurrence(pattern.pathCycle!, binding)
       for (const p of Object.keys(pattern.propMap)) {
+        let atP = pattern.propMap[p]
+        if (atP instanceof QueryPattern) {
+          connectPathCycles(atP as QueryPattern, binding)
+        }        
+      }
+    }
+
+    function connectPattern(pattern: QueryPattern, variables: NodeVariableProvider, binding: object): object {
+      let node = pattern.subject instanceof Var
+        ? ensureNode(pattern.iriFromBinding(binding, variables.refvar))
+        : ensureNode((pattern.subject as QuerySubject).iri)
+      for (const p of Object.keys(pattern.propMap)) {
+        if (self.isPropertyInPathExression(pattern, p)) continue       
         let atP = pattern.propMap[p]
         if (atP instanceof QueryPattern) {
           let subPattern = atP as QueryPattern
           if (subPattern.isCycleEnd) 
-            connectPathOccurrence(rootId, subPattern.pathCycle!, binding)
+            connectPathOccurrence(subPattern.pathCycle!, binding)
           else {
-            let nestedNode = connectPattern(rootId, subPattern, binding)
+            let nestedNode = connectPattern(subPattern, variables.property(p), binding)
             assignValue(p, node, pattern, nestedNode)
           }
         }
@@ -572,7 +746,7 @@ export class RootQueryPattern extends QueryPattern {
           let literal = atP as LiteralObject
           let value = literal.operator == Operator.equals 
                         ? literal.value 
-                        : binding[literal.variable!.name]
+                        : binding[variables.property(p).refvar.name]
           assignValue(p, node, pattern, value)
         }
       }
@@ -584,34 +758,6 @@ export class RootQueryPattern extends QueryPattern {
         assignValue(shortPropname, node, pattern, propvalue)
       }
       return node
-    }
-
-    // Every variable in a binding hold the value of a property of a parent entity.
-    // This function finds the parent entity as a result node and as the original QueryPattern
-    // and also the name of the property
-    function findResultParentNode(rootId: string, varname: string, binding: object): 
-                    {prop:string, node:object, pattern: QueryPattern} {
-      let nodes = resultStructure[rootId] = resultStructure[rootId] || {}
-      let parentPattern = self.patternReferences[varname].parent!
-      let parentVar = parentPattern.refvar.name
-      let parentIRI = parentPattern.iriFromBinding(binding)
-      let node
-      if (self.isMultiple(parentPattern)) {
-        nodes[parentVar] = nodes[parentVar] || []    
-        node = nodes[parentVar].find(e => e['@id'] == parentIRI)
-        if (!node) {
-          node = ensureNode(parentIRI)
-          nodes[parentVar].push(node)
-        }
-      }
-      else
-        node = nodes[parentVar] = ensureNode(parentIRI)
-      let propname = parentPattern.propName(varname)
-      if (!propname) {
-        console.log("Could not find property name for " + varname + " in ", parentPattern)
-        throw new Error("Could not find property name for " + varname + " in " + safeStringify(parentPattern))
-      }
-      return {prop: propname, node: node, pattern: parentPattern}
     }
 
     /**
@@ -684,17 +830,8 @@ export class RootQueryPattern extends QueryPattern {
 
     bindings.forEach(binding => {      
       let root = ensureRootNode(binding)
-      // for (let varname of Object.keys(binding).filter(k => k != this.refvar.name)) {
-      //   // Find the node in the result tree which holds the value
-      //   // of this key
-      //   let {prop, node, pattern} = findResultParentNode(root['@id'], varname, binding)
-      //   if (pattern.multiplicity[prop]) {
-      //     addArrayElement(prop, node, pattern, binding[varname].value)
-      //   }
-      //   else
-      //     node[prop] = binding[varname].value
-      // }
-      connectPattern(root['@id'], self, binding)
+      connectPattern(self, new QueryNodeVariables(this), binding)
+      connectPathCycles(self, binding)
     })
     // console.log(safeStringify(resultStructure))
     let resultArray = Object.values(result) as Array<object>
@@ -704,7 +841,7 @@ export class RootQueryPattern extends QueryPattern {
   toSparql(): SparqlSelect {
     let select = new SparqlSelect()
     select.pattern.add(this.triples)
-    select.pattern.add(new SparqlConjunction().add(...this.pathExpressionTriples))
+    select.pattern.add(this.pathExpressionTriples)
     select.filter = new SparqlFilter(this.sparqlFilters)
     return select
   }
